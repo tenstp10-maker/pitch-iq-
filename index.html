@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Pitch IQ demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;800&family=Barlow:wght@400;600&display=swap" rel="stylesheet">
+<style>
+/* VOICE: matchday, terse, coach-like
+   IDEA: a floodlit stadium seen from a player's eyes; the UI is the stadium scoreboard and a coach's tactics card
+   PICTURE: the live 3D pitch fills the screen, always
+   COLOUR and TYPE: night pitch green-black, chalk white, referee-card yellow accent; home sky blue vs away red; Barlow Condensed + Barlow
+   LAYOUT: full-bleed scene, HUD in the safe-area corners, sheets float centre and scroll */
+:root{color-scheme:dark;--ink:#f4f6ef;--dim:#a9b8ad;--bg:#08120d;--panel:rgba(8,18,12,.9);--line:rgba(244,246,239,.14);--card:#ffd23f;--us:#36b1f0;--them:#e8463a;--good:#5fe08a}
+*{box-sizing:border-box;min-width:0;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:16px/1.45 Barlow,system-ui,sans-serif;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none}
+#c{position:fixed;inset:0;width:100%;height:100%;display:block}
+.cond{font-family:"Barlow Condensed",Barlow,sans-serif;letter-spacing:.01em}
+button{font:inherit;color:inherit;cursor:pointer;border:0;min-height:44px;border-radius:12px}
+button:focus-visible{outline:3px solid var(--card);outline-offset:2px}
+#hud{position:fixed;left:0;right:0;top:0;display:none;gap:8px;align-items:flex-start;justify-content:space-between;padding:calc(env(safe-area-inset-top) + 10px) calc(env(safe-area-inset-right) + 12px) 0 calc(env(safe-area-inset-left) + 12px);pointer-events:none}
+.chip{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px 10px;font-size:14px;white-space:nowrap}
+.chip b{font-family:"Barlow Condensed",Barlow,sans-serif;font-size:20px;line-height:1;color:var(--card)}
+#scans.bump{animation:bump .5s}
+@keyframes bump{40%{transform:scale(1.18);background:#2b3a12}}
+#clock{flex:1;max-width:340px;display:none}
+#clock .bar{height:10px;border-radius:5px;background:rgba(255,255,255,.15);overflow:hidden;margin-top:5px}
+#clock .fill{height:100%;background:var(--card);width:100%;transform-origin:left}
+#clock .t{display:flex;justify-content:space-between;font-size:13px}
+#tag{font-family:"Barlow Condensed",Barlow,sans-serif;font-weight:800;font-size:15px;background:var(--card);color:#151a07;border-radius:8px;padding:4px 10px;display:none}
+#markers{position:fixed;inset:0;pointer-events:none}
+.mk{position:absolute;transform:translate(-50%,-100%);pointer-events:auto;background:var(--ink);color:#0c140f;font-weight:600;font-size:14px;border-radius:22px;padding:0 12px 0 4px;min-height:40px;display:flex;align-items:center;gap:6px;box-shadow:0 4px 14px rgba(0,0,0,.45);white-space:nowrap}
+.mk i{font-style:normal;font-family:"Barlow Condensed",Barlow,sans-serif;font-weight:800;font-size:18px;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:var(--card)}
+.mk.edge{opacity:.85}
+#opts{position:fixed;left:0;right:0;bottom:0;display:none;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:0 calc(env(safe-area-inset-right) + 12px) calc(env(safe-area-inset-bottom) + 12px) calc(env(safe-area-inset-left) + 12px)}
+#opts button{background:var(--panel);border:1px solid var(--line);text-align:left;padding:8px 10px;display:flex;gap:8px;align-items:center;font-size:14px;line-height:1.2}
+#opts button i{font-style:normal;flex:none;font-family:"Barlow Condensed",Barlow,sans-serif;font-weight:800;font-size:18px;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;background:var(--card);color:#151a07}
+#opts button:active{background:#22301f}
+#hint{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 18px);transform:translateX(-50%);background:var(--panel);border:1px solid var(--line);border-radius:22px;padding:8px 16px;font-size:14px;display:none;white-space:nowrap;pointer-events:none}
+#banner{position:fixed;left:50%;top:42%;transform:translate(-50%,-50%);text-align:center;width:min(92vw,640px);pointer-events:none;display:none;text-shadow:0 3px 18px rgba(0,0,0,.8)}
+#banner h2{margin:0;font:800 clamp(34px,8vw,64px)/1 "Barlow Condensed",Barlow,sans-serif;text-transform:uppercase}
+#banner p{margin:8px 0 0;font-size:18px}
+.sheet{position:fixed;inset:0;overflow-y:auto;display:none;padding:calc(env(safe-area-inset-top) + 16px) calc(env(safe-area-inset-right) + 14px) calc(env(safe-area-inset-bottom) + 16px) calc(env(safe-area-inset-left) + 14px);background:linear-gradient(rgba(5,12,8,.25),rgba(5,12,8,.55));touch-action:pan-y}
+.sheet.on{display:block}
+.panel{max-width:560px;margin:auto;background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:20px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.wide{max-width:860px}
+h1{margin:0;font:800 clamp(40px,9vw,56px)/1 "Barlow Condensed",Barlow,sans-serif;text-transform:uppercase}
+h1 span{color:var(--card)}
+h3{margin:0 0 4px;font:800 26px/1.1 "Barlow Condensed",Barlow,sans-serif}
+.sub{color:var(--dim);margin:6px 0 16px}
+.seg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;background:rgba(255,255,255,.06);padding:4px;border-radius:14px;margin-bottom:14px}
+.seg button{background:transparent;font-weight:600;font-size:15px}
+.seg button small{display:block;font-weight:400;color:var(--dim);font-size:13px}
+.seg button[aria-pressed=true]{background:var(--ink);color:#0c140f}
+.seg button[aria-pressed=true] small{color:#3b4a3f}
+.scs{display:grid;gap:10px}
+.sc{background:rgba(255,255,255,.05);border:1px solid var(--line);text-align:left;padding:12px 14px;display:grid;grid-template-columns:1fr auto;gap:2px 12px;align-items:center}
+.sc:active{background:rgba(255,255,255,.1)}
+.sc .pos{font-size:13px;color:var(--us);font-weight:600}
+.sc .nm{font:800 22px/1.1 "Barlow Condensed",Barlow,sans-serif}
+.sc .q{color:var(--dim);font-size:14px;grid-column:1}
+.sc .best{grid-row:1/4;grid-column:2;text-align:right;font-size:13px;color:var(--dim)}
+.sc .best b{display:block;font:800 26px/1 "Barlow Condensed",Barlow,sans-serif;color:var(--card)}
+.go{background:var(--card);color:#151a07;font-weight:600;font-size:17px;width:100%;margin-top:14px}
+.ghost{background:rgba(255,255,255,.08);font-weight:600;font-size:15px;padding:0 14px}
+.tips{margin:12px 0 0;padding-left:18px;color:var(--dim);font-size:15px}
+.tips li{margin:4px 0}
+.small{font-size:13px;color:var(--dim);margin-top:12px}
+.rv{display:grid;gap:16px}
+@media(min-width:720px){.rv{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr)}}
+.score{display:flex;align-items:flex-end;gap:12px}
+.score b{font:800 clamp(64px,14vw,92px)/.85 "Barlow Condensed",Barlow,sans-serif;color:var(--card)}
+.score span{font:800 22px/1.1 "Barlow Condensed",Barlow,sans-serif;text-transform:uppercase}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:14px 0}
+.stats div{background:rgba(255,255,255,.06);border-radius:12px;padding:8px 10px}
+.stats small{display:block;color:var(--dim);font-size:13px}
+.stats strong{font:800 22px/1.1 "Barlow Condensed",Barlow,sans-serif;white-space:nowrap}
+.note{margin:0 0 10px}
+.bestline{border-left:3px solid var(--good);padding-left:10px;margin:10px 0;font-size:15px}
+.map svg{width:100%;height:auto;display:block;border-radius:12px}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;color:var(--dim);margin-top:6px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+.btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:14px}
+.btns .go{width:auto;flex:1 1 160px;margin:0}
+.btns .ghost{flex:1 1 110px}
+#err{position:fixed;inset:0;display:none;place-items:center;padding:24px;text-align:center}
+@media(max-width:520px){#scen{display:none}}
+@media(max-width:620px){#opts{grid-template-columns:repeat(2,minmax(0,1fr))}.mk span{display:none}.mk{padding:0 4px}}
+@media(max-height:460px){.panel{padding:14px 16px}h1{font-size:40px}.sub{margin:4px 0 10px}}
+@media(prefers-reduced-motion:reduce){#scans.bump{animation:none}}
+</style>
+</head>
+<body>
+<canvas id="c" aria-label="First-person view of a football pitch"></canvas>
+
+<div id="hud">
+  <div class="chip" id="scen">Scenario</div>
+  <div class="chip" id="clock"><div class="t"><span>Decide</span><span id="clockT">3.0 s</span></div><div class="bar"><div class="fill" id="fill"></div></div></div>
+  <div id="tag">FREEZE</div>
+  <div class="chip" id="scans">Scans <b id="scanN">0</b></div>
+</div>
+<div id="markers"></div>
+<div id="opts"></div>
+<div id="hint"></div>
+<div id="banner"><h2 id="bT"></h2><p id="bP"></p></div>
+
+<section class="sheet" id="menu">
+  <div class="panel">
+    <h1>Pitch <span>IQ</span></h1>
+    <p class="sub">Live the moment from a player's eyes. When play freezes, pick the pass before the clock runs out.</p>
+    <div class="seg" id="diff" role="group" aria-label="Difficulty"></div>
+    <div class="scs" id="list"></div>
+    <p class="small">Demo build: ten scenarios, each with three versions picked at random, so the right answer changes. Drag to look on a phone; mouse and WASD on a computer. Best scores stay on this device.</p>
+  </div>
+</section>
+
+<section class="sheet" id="brief">
+  <div class="panel">
+    <div class="sc pos" id="bPos" style="background:none;border:0;padding:0"></div>
+    <h3 id="bName"></h3>
+    <p class="sub" id="bText"></p>
+    <ul class="tips">
+      <li id="ctl">The ball is coming to you. Drag to look away from it and check what is around you.</li>
+      <li>Each look of more than about 57° away from the ball counts as a scan.</li>
+      <li>Play slows, then freezes. Tap a numbered marker or button to choose.</li>
+    </ul>
+    <button class="ghost" id="motion" style="display:none;width:100%;margin-top:12px">Turn on motion look</button>
+    <p class="small" id="motionMsg" role="status"></p>
+    <button class="go" id="kick">Kick off</button>
+    <div class="btns"><button class="ghost" id="back1">Back to scenarios</button></div>
+  </div>
+</section>
+
+<section class="sheet" id="review">
+  <div class="panel wide">
+    <div class="rv">
+      <div>
+        <div class="score"><b id="rScore">0</b><span id="rVerdict"></span></div>
+        <div class="stats">
+          <div><small>Decision</small><strong id="rQ"></strong></div>
+          <div><small>Time</small><strong id="rT"></strong></div>
+          <div><small>Scans</small><strong id="rS"></strong></div>
+        </div>
+        <p class="note" id="rNote"></p>
+        <div class="bestline" id="rBest"></div>
+        <p class="small" id="rScan"></p>
+      </div>
+      <div class="map">
+        <div id="rMap"></div>
+        <div class="legend"><span><i style="background:var(--card)"></i>You</span><span><i style="background:var(--us)"></i>Team</span><span><i style="background:var(--them)"></i>Opponent</span><span>Solid line: your choice · Dashed: best</span></div>
+      </div>
+    </div>
+    <div class="btns">
+      <button class="go" id="next">Next scenario</button>
+      <button class="ghost" id="watch">Watch best</button>
+      <button class="ghost" id="retry">Try again</button>
+      <button class="ghost" id="toMenu">Menu</button>
+    </div>
+  </div>
+</section>
+
+<div id="err"><p>The 3D engine could not load. Check your connection and reopen this page.</p></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+{
+const $ = s => document.querySelector(s);
+if (!window.THREE) { $('#err').style.display = 'grid'; throw new Error('no three'); }
+
+// ---------- data ----------
+const DIFF = {
+  easy:   {lim: 5,   slow: 1.6, sf: .3, label: 'Easy'},
+  medium: {lim: 3,   slow: 1.0, sf: .4, label: 'Medium'},
+  pro:    {lim: 1.8, slow: .5,  sf: .6, label: 'Pro'}
+};
+const SC = [
+ {id:'cm', pos:'Central midfield', name:'Receiving in the pocket', q:'Can you play forward before the press closes?', T:4.2,
+  text:'1-0 up, 63rd minute. Your centre-back plays it into you between their midfield and defence. Their #6 is stepping up to press.',
+  you:{a:[49,3], b:[55,0]}, from:'cb',
+  pl:[['cb','us','CB',[36,-10],[36,-9]],['lb','us','LB',[46,-28],[50,-29]],['rb','us','RB',[50,27],[55,28]],['lw','us','LW',[64,-25],[68,-27]],
+      ['rw','us','RW',[66,22],[70,24]],['ten','us','10',[63,-3],[69,-6]],['st','us','9',[80,3],[83,1]],
+      ['o6','them','',[63,6],[58.5,2.5]],['o8','them','',[60,-16],[59,-12]],['o8b','them','',[60,17],[63,12]],['ob1','them','',[82,-5],[81,-4]],
+      ['ob2','them','',[82,7],[81,6]],['ofl','them','',[78,-20],[76,-21]],['ofr','them','',[78,20],[75,19]],['ow','them','',[44,11],[51,5]],['gk','gk','',[102,0],[102,0]]],
+  opts:[
+   {l:'Split pass to the #10', k:'pass', to:'ten', end:[70,-6.5], ok:1, q:95, res:'Line broken', rt:'Your #10 turns and runs at the back line.',
+    note:'The gap between their two midfielders was open the whole time. One forward pass took out four players.'},
+   {l:'Switch to the left winger', k:'long', to:'lw', end:[69,-27.5], ok:1, q:70, res:'Switch completes', rt:'Safe, but their block slides across in time.',
+    note:'You keep the ball, but the long, slow switch lets their midfield shift over and the chance to break the line is gone.'},
+   {l:'Pass wide to the right winger', k:'pass', to:'rw', by:'o8b', cut:[63.2,11.6], ok:0, q:25, res:'Intercepted', rt:'Their #8 was sitting in the passing lane.',
+    note:'The lane to the winger was inside their midfielder’s cover shadow. A scan to your right would have shown it.'},
+   {l:'Turn and carry', k:'carry', by:'o6', end:[59,1], cut:[59,1.4], ok:0, q:15, res:'Tackled', rt:'Pressure from in front and a runner from behind.',
+    note:'With a presser in front and a man arriving from behind, turning into that space is a 2 v 1 trap.'}]},
+ {id:'rw', pos:'Right wing', name:'Overlapping full-back', q:'Cut inside, go alone, or release the overlap?', T:4.0,
+  text:'0-0, 30th minute. Your #8 finds you on the right touchline. Your full-back is starting a run outside you.',
+  you:{a:[66,20], b:[73,21]}, from:'cm',
+  pl:[['cm','us','8',[58,6],[60,6]],['rb','us','RB',[57,30],[73,31]],['st','us','9',[86,2],[92,3]],['ten','us','10',[78,-4],[84,-6]],
+      ['lw','us','LW',[80,-24],[88,-22]],['dm','us','6',[50,-4],[52,-3]],
+      ['olb','them','',[82,20],[77.5,20.5]],['olm','them','',[64,31],[67,29.5]],['oc1','them','',[92,4],[94,3.4]],['oc2','them','',[90,-6],[93,-6]],
+      ['orb','them','',[88,-20],[92,-18]],['od1','them','',[80,8],[81.5,12.5]],['od2','them','',[74,-2],[78,0]],['gk','gk','',[103,0],[102.5,0]]],
+  opts:[
+   {l:'Release the overlap', k:'pass', to:'rb', end:[83,31], ok:1, q:92, res:'In behind', rt:'Your full-back is clear with time to cross.',
+    note:'Their full-back had committed to you. The overlap was free outside him, a clean 2 v 1.'},
+   {l:'Cut inside and shoot', k:'shot', by:'od1', cut:[80.8,13.5], ok:0, q:30, res:'Blocked', rt:'Their midfielder was covering the inside.',
+    note:'Cutting in ran straight into the covering midfielder, and the angle for a shot was tight anyway.'},
+   {l:'Early cross to the #9', k:'long', to:'st', by:'oc1', cut:[93.6,3.2], ok:0, q:50, res:'Headed clear', rt:'One runner against two centre-backs.',
+    note:'An early cross to one marked striker rarely wins. Get closer to the box, or use the overlap first.'},
+   {l:'Play back to the #8', k:'pass', to:'cm', end:[61,6.5], ok:1, q:55, res:'Possession kept', rt:'Safe, but the attack slows down.',
+    note:'Nothing wrong with keeping the ball, but you gave up a 2 v 1 on the wing.'}]},
+ {id:'ten', pos:'Attacking midfield', name:'Edge of the box', q:'Shoot, slip the striker in, or recycle?', T:3.8,
+  text:'1-1, 81st minute. The ball comes to you 20 metres from goal. Your #9 is darting between the two centre-backs.',
+  you:{a:[80,-4], b:[85,-1]}, from:'cm',
+  pl:[['cm','us','8',[70,-8],[72,-6]],['st','us','9',[92,7],[95,3]],['lw','us','LW',[88,-24],[94,-21]],['rw','us','RW',[88,22],[92,20]],
+      ['oc1','them','',[94,-2],[95,-3]],['oc2','them','',[93,10],[96,8]],['od','them','',[93,-8],[89,-3.5]],['orb','them','',[94,-18],[96,-17]],
+      ['olb','them','',[94,18],[96,17]],['od2','them','',[84,8],[86,5]],['gk','gk','',[103,0],[102.6,0]]],
+  opts:[
+   {l:'Slip the #9 through', k:'pass', to:'st', end:[100,2.5], ok:1, q:92, res:'Clean through', rt:'Your #9 is one on one with the keeper.',
+    note:'The run split the centre-backs. A firm pass into that gap is the highest-value option on the pitch.'},
+   {l:'Shoot from 20 metres', k:'shot', by:'gk', cut:[103.4,-2], ok:0, q:55, res:'Saved', rt:'Good contact, but the keeper had it covered.',
+    note:'A fair shot, but from 20 metres with the keeper set, you are giving up a better chance.'},
+   {l:'Wide to the left winger', k:'pass', to:'lw', end:[94,-21.5], ok:1, q:50, res:'Ball kept', rt:'But the chance has gone wide.',
+    note:'Safe, but it moves the ball away from goal when a central chance was there.'},
+   {l:'Dribble past the #6', k:'carry', by:'od', end:[88,-2], cut:[88,-2.6], ok:0, q:20, res:'Tackled', rt:'He was already closing you down.',
+    note:'Their #6 was arriving fast. Taking him on with a 2 v 1 behind him is a low-percentage play.'}]},
+ {id:'gk', pos:'Centre-back', name:'Goal kick, right centre-back', q:'Beat the press from a goal kick.', T:3.6,
+  text:'0-0, 12th minute. Your keeper plays the goal kick short to you on the right of the box. Their striker is curving his press toward you.',
+  you:{a:[6,13], b:[8,17]}, from:'ugk',
+  pl:[['ugk','ugk','GK',[5,5],[5,5]],['lcb','us','LCB',[6,-13],[8,-17]],['rb','us','RB',[18,26],[24,30]],['lb','us','LB',[18,-26],[22,-29]],
+      ['dm','us','6',[22,2],[20,4]],['cm','us','8',[34,10],[36,12]],['am','us','10',[36,-10],[38,-12]],['st','us','9',[52,0],[50,2]],
+      ['rw','us','RW',[46,26],[48,28]],['lw','us','LW',[46,-26],[48,-28]],
+      ['s1','them','',[22,8],[13,12.5]],['s2','them','',[22,-8],[16,-10]],['m1','them','',[28,4],[25,4]],['m2','them','',[36,14],[33,16]],
+      ['m3','them','',[36,-14],[34,-14]],['d1','them','',[56,6],[54,5]],['d2','them','',[56,-6],[54,-5]],['d3','them','',[52,22],[50,22]],
+      ['d4','them','',[52,-22],[50,-22]],['gk','gk','',[101,0],[101,0]]],
+  opts:[
+   {l:'Play out to the right-back', k:'pass', to:'rb', end:[25,30.5], ok:1, q:92, res:'Press beaten', rt:'Your full-back has time and space down the line.',
+    note:'Their striker curved his run to block the pass back to the keeper, which left the full-back free outside him.'},
+   {l:'Back to the keeper', k:'pass', to:'ugk', by:'s1', cut:[7.6,13], ok:0, q:30, res:'Pounced on', rt:'Their striker was already in that lane.',
+    note:'Their #9 curved his run exactly to cut that pass. Going back to the keeper invites the press to win it by our goal.'},
+   {l:'Into the #6', k:'pass', to:'dm', by:'m1', cut:[18.6,5.6], ok:0, q:40, res:'Intercepted', rt:'Their #8 was screening your midfielder.',
+    note:'The #6 was marked from behind. Forcing it into him under pressure risks losing the ball in front of our goal.'},
+   {l:'Go long to the #9', k:'long', to:'st', by:'d1', cut:[51,2.5], ok:0, q:50, res:'Won in the air', rt:'Their centre-back heads it back.',
+    note:'A long ball avoids the press but is a 50-50 at best. The free full-back was the cleaner way out.'}]},
+ {id:'sw', pos:'Central midfield', name:'Switch to the striker', q:'Spot the free man on the far side.', T:4.0,
+  text:'1-1, 55th minute. Your right-back plays it inside to you. Their whole block has shifted toward our right, and your #9 has drifted out to the left.',
+  you:{a:[50,17], b:[55,19]}, from:'rb',
+  pl:[['rb','us','RB',[44,28],[46,30]],['st','us','9',[72,-12],[76,-21]],['rw','us','RW',[70,24],[74,26]],['am','us','10',[64,6],[68,8]],
+      ['dm','us','6',[44,2],[46,0]],['lw','us','LW',[64,-28],[66,-30]],
+      ['p1','them','',[60,24],[58.5,22.5]],['p2','them','',[62,10],[60,12.5]],['p3','them','',[62,0],[63,4]],['p4','them','',[66,-10],[66,-5]],
+      ['dl','them','',[80,22],[77,25]],['d1','them','',[80,8],[80,9]],['d2','them','',[80,0],[80,1]],['dr','them','',[78,-10],[79,-9]],['gk','gk','',[102,0],[102,0]]],
+  opts:[
+   {l:'Switch to the #9 on the left', k:'long', to:'st', end:[77,-22], ok:1, q:93, res:'Switch lands', rt:'Your #9 is one v one with space to attack.',
+    note:'Their whole block had shifted to our right. One long diagonal moved the ball to the free side faster than they could slide across.'},
+   {l:'Into the #10', k:'pass', to:'am', by:'p2', cut:[61.8,13.8], ok:0, q:35, res:'Intercepted', rt:'The ball side was packed.',
+    note:'Their midfield was crowded on our right. Forcing it centrally ran into the busiest part of the pitch.'},
+   {l:'Down the line to the RW', k:'pass', to:'rw', by:'dl', cut:[72,25.4], ok:0, q:40, res:'Stepped in front', rt:'Their full-back read it.',
+    note:'The winger was marked tight with his back to goal, and you kept the ball on the crowded side.'},
+   {l:'Back to the #6', k:'pass', to:'dm', end:[46.5,0.5], ok:1, q:55, res:'Possession kept', rt:'Safe, but the switch has gone.',
+    note:'Recycling is fine, but it gave their block time to slide back across.'}]},
+ {id:'lb', pos:'Centre-back', name:'Break the lines', q:'Find the midfielder between their lines.', T:3.8,
+  text:'0-0, 30th minute. Your partner plays it across to you. They sit in a mid-block, and your #8 has found a pocket between their midfield and defence.',
+  you:{a:[30,8], b:[34,9]}, from:'lcb',
+  pl:[['lcb','us','LCB',[28,-10],[30,-12]],['dm','us','6',[40,0],[42,0]],['rb','us','RB',[40,28],[44,30]],['lb','us','LB',[40,-26],[44,-28]],
+      ['eight','us','8',[57,5],[59,1]],['am','us','10',[60,-14],[62,-12]],['st','us','9',[70,2],[72,0]],['rw','us','RW',[66,26],[68,26]],['lw','us','LW',[66,-26],[68,-26]],
+      ['f1','them','',[44,10],[42,14]],['f2','them','',[44,-6],[42,-1]],['m1','them','',[54,12],[52,10]],['m2','them','',[54,-6],[52,-4]],
+      ['m3','them','',[53,22],[52,22]],['m4','them','',[53,-20],[52,-20]],['d1','them','',[66,6],[68,4]],['d2','them','',[66,-6],[68,-5]],
+      ['d3','them','',[64,20],[65,20]],['d4','them','',[64,-20],[65,-20]],['gk','gk','',[102,0],[102,0]]],
+  opts:[
+   {l:'Break the lines to the #8', k:'pass', to:'eight', end:[59.5,1], ok:1, q:94, res:'Two lines broken', rt:'Your #8 turns to face their back four.',
+    note:'The gap between their two central midfielders was wide open. One firm pass took six players out of the game.'},
+   {l:'Short to the #6', k:'pass', to:'dm', by:'f2', cut:[40.8,2.3], ok:0, q:40, res:'Pressed', rt:'Their strikers collapse on him.',
+    note:'The #6 was standing between their two strikers. Even if it arrives, he receives with pressure on his back.'},
+   {l:'Wide to the right-back', k:'pass', to:'rb', end:[44.5,30], ok:1, q:55, res:'Possession kept', rt:'Safe, but their block stays intact.',
+    note:'Going wide lets their midfield stay compact. The forward pass was on.'},
+   {l:'Long ball to the #9', k:'long', to:'st', by:'d1', cut:[70.5,1.5], ok:0, q:45, res:'Cleared', rt:'Their centre-back wins the header.',
+    note:'Skipping midfield turns it into a 50-50 when a clean line-breaking pass was there.'}]},
+ {id:'w1', pos:'Right wing', name:'One v one, then the cross', q:'Cut-back, back post or near post?', T:4.0, dribble:1,
+  text:'2-1 down, 77th minute. You are running at their left-back with the ball. Beat him to the byline, then pick your delivery.',
+  you:{a:[78,26], b:[99,22]},
+  pl:[['am','us','10',[80,2],[89,6]],['st','us','9',[88,-4],[100,-6]],['lw','us','LW',[84,-18],[98,-12]],['cm','us','8',[70,8],[78,10]],
+      ['fb','them','',[86,22],[97,23.5]],['cb1','them','',[92,4],[100,4]],['cb2','them','',[92,-4],[100,-3.5]],['dm','them','',[82,6],[96,3]],
+      ['fb2','them','',[90,-14],[97,-10]],['m2','them','',[76,-6],[84,-4]],['gk','gk','',[102,0],[103,2]]],
+  opts:[
+   {l:'Cut it back to the #10', k:'pass', to:'am', end:[89.5,6.2], ok:1, q:92, res:'Cut-back on', rt:'Your #10 arrives unmarked on the penalty spot.',
+    note:'Their defenders all ran toward their own goal. The space they left behind them, around the penalty spot, was the best place to put the ball.'},
+   {l:'Chip it to the back post', k:'chip', to:'lw', end:[98.5,-11.5], ok:1, q:72, res:'Back-post header', rt:'Your winger gets a header on goal.',
+    note:'A good option: the back post was only lightly covered. The cut-back was even better, with a free shot from 12 metres.'},
+   {l:'Drive it near post', k:'pass', to:'st', by:'cb1', cut:[100,5], ok:0, q:40, res:'Cleared', rt:'Their centre-back got to the near post first.',
+    note:'Two defenders were guarding the near post. A low drive there rarely gets through.'},
+   {l:'Shoot from the angle', k:'shot', by:'gk', cut:[103.4,3], ok:0, q:25, res:'Saved', rt:'The keeper had the near post covered.',
+    note:'From the byline the angle is tiny. Your teammates were in far better positions.'}]},
+ {id:'ck', pos:'Defensive midfield', name:'Check to the keeper', q:'One touch through their press.', T:3.4,
+  text:'0-0, 20th minute. You drop toward your keeper to give him an option. Their forwards are pressing, and your right centre-back has split wide.',
+  you:{a:[18,1], b:[13,0]}, from:'ugk',
+  pl:[['ugk','ugk','GK',[6,0],[6,0]],['rcb','us','RCB',[10,14],[14,22]],['lcb','us','LCB',[10,-14],[14,-21]],['rb','us','RB',[24,28],[30,30]],
+      ['lb','us','LB',[24,-28],[30,-30]],['cm','us','8',[30,8],[32,10]],['am','us','10',[34,-8],[36,-10]],['st','us','9',[48,0],[50,0]],
+      ['s','them','',[20,4],[9,7]],['f2','them','',[24,12],[18,9]],['f1','them','',[24,-12],[18,-8]],['m1','them','',[26,0],[16.5,1]],
+      ['m2','them','',[32,14],[30,16]],['m3','them','',[32,-14],[30,-15]],['d1','them','',[48,6],[46,5]],['d2','them','',[48,-6],[46,-5]],['gk','gk','',[101,0],[101,0]]],
+  opts:[
+   {l:'One touch between them to the RCB', k:'pass', to:'rcb', end:[14.5,22.5], ok:1, q:93, res:'Press broken', rt:'Your centre-back steps out with the right side open.',
+    note:'Two of their forwards left a gap between them. A first-time pass through it beat the press before it could close.'},
+   {l:'Back to the keeper', k:'pass', to:'ugk', end:[6,0.3], ok:1, q:45, res:'Back to the keeper', rt:'Safe, but their striker is closing him down.',
+    note:'Safe for now, but it gives their press a second go at our keeper.'},
+   {l:'Turn', k:'carry', by:'m1', end:[17,1], cut:[17,0.6], ok:0, q:15, res:'Tackled', rt:'Their #8 was right on your back.',
+    note:'Checking short brings a marker with you. Turning blind into him is the riskiest option on the pitch.'},
+   {l:'Lay it to the LCB', k:'pass', to:'lcb', by:'f1', cut:[14,-8.5], ok:0, q:40, res:'Intercepted', rt:'Their forward was sitting in that lane.',
+    note:'Their forward was covering the left side. The lane to the right was the open one.'}]},
+ {id:'ca', pos:'Central midfield', name:'Counter-attack', q:'Three v two: who gets the ball?', T:3.6, dribble:1,
+  text:'1-0 up, 70th minute. You win the ball and drive forward. Two defenders are back, and your wingers and #9 are sprinting with you.',
+  you:{a:[50,2], b:[68,0]},
+  pl:[['lw','us','LW',[58,-22],[80,-20]],['rw','us','RW',[58,22],[82,16]],['st','us','9',[66,-4],[80,-2]],
+      ['d1','them','',[82,6],[78,2]],['d2','them','',[80,-12],[80,-8]],['ch','them','',[44,6],[64,3]],['fb','them','',[60,26],[74,22]],
+      ['m2','them','',[46,-10],[58,-8]],['gk','gk','',[102,0],[101,0]]],
+  opts:[
+   {l:'Slip the RW in behind', k:'pass', to:'rw', end:[86,15], ok:1, q:92, res:'In behind', rt:'Your winger is through with only the keeper to beat.',
+    note:'Their full-back was still recovering, so the right channel was empty. The pass took both centre-backs out of the game.'},
+   {l:'Pass to the #9', k:'pass', to:'st', by:'d1', cut:[77.5,-1.3], ok:0, q:40, res:'Intercepted', rt:'Both centre-backs were around him.',
+    note:'The striker was between both defenders. Passing into the most crowded spot killed the counter.'},
+   {l:'Wide left to the LW', k:'pass', to:'lw', end:[81,-20.5], ok:1, q:60, res:'Ball kept', rt:'But their covering defender is getting across.',
+    note:'Not a bad pass, but their second defender was already shading toward that side.'},
+   {l:'Keep dribbling', k:'carry', by:'d1', end:[74,1], cut:[74,1.4], ok:0, q:20, res:'Tackled', rt:'Their centre-back stepped in.',
+    note:'In a 3 v 2, carrying into the defender wastes the overload. Release the ball while the pass is on.'}]},
+ {id:'lg', pos:'Centre-back', name:'Long ball in behind', q:'Their line is high. Hit the run?', T:3.8,
+  text:'0-0, 60th minute. Your partner passes across to you. Their back four has pushed up to halfway, and your #9 is starting a run.',
+  you:{a:[42,7], b:[46,9]}, from:'lcb',
+  pl:[['lcb','us','LCB',[42,-10],[42,-12]],['st','us','9',[60,10],[64,12]],['rw','us','RW',[60,26],[64,28]],['cm','us','8',[52,4],[53,2]],
+      ['rb','us','RB',[48,28],[52,30]],['lw','us','LW',[60,-26],[64,-26]],['dm','us','6',[40,-2],[42,0]],
+      ['p1','them','',[56,12],[51.5,10]],['p2','them','',[54,-2],[50,0]],['p3','them','',[54,-14],[52,-12]],
+      ['d1','them','',[63,4],[62,5]],['d2','them','',[63,-6],[62,-6]],['d3','them','',[62,18],[62,20]],['d4','them','',[62,-20],[61,-20]],['gk','gk','',[96,0],[95,0]]],
+  opts:[
+   {l:'Long ball in behind to the #9', k:'long', to:'st', end:[80,14], ok:1, q:93, res:'Over the top', rt:'Your #9 is through on goal.',
+    note:'Their back line was high with acres behind it, and nobody was pressing you. The run in behind was the quickest way to goal.'},
+   {l:'Into the #8', k:'pass', to:'cm', by:'p2', cut:[50.5,4.7], ok:0, q:40, res:'Intercepted', rt:'He was marked from behind.',
+    note:'Your #8 had a man tight on his back. The pass into him was the one they wanted you to play.'},
+   {l:'Out to the right-back', k:'pass', to:'rb', end:[52.5,30], ok:1, q:55, res:'Possession kept', rt:'Safe, but the chance in behind is gone.',
+    note:'Fine to keep the ball, but the moment to hit the run lasts about a second.'},
+   {l:'Carry into midfield', k:'carry', by:'p1', end:[52,9.5], cut:[51.6,9.8], ok:0, q:25, res:'Tackled', rt:'Their midfielder was already closing.',
+    note:'Carrying into a pressing midfielder gives them the ball high up the pitch. The pass over the top was on.'}]}
+];
+const VARS = {
+ cm: [
+  {move:{o8b:{b:[61,-2.6]}, o6:{b:[58,-2.5]}},
+   opts:{0:{ok:0, by:'o8b', cut:[61.4,-2.5], q:35, res:'Intercepted', rt:'Their #8 had tucked inside to block it.', note:'This time their #8 had moved inside to cover the gap to the #10. The forward pass was the one they were waiting for.'},
+         1:{q:60, note:'The switch works, but it is slow, and the quicker pass to the right was open.'},
+         2:{ok:1, end:[70.5,24.3], q:90, res:'Wide open', rt:'Your winger has space to run at their full-back.', note:'Their #8 tucked inside to block the forward pass, which opened the lane out to the right winger.'},
+         3:{cut:[59,1.2]}}},
+  {move:{o8:{b:[62,-4.5]}},
+   opts:{0:{ok:0, by:'o8', cut:[62,-2.9], q:35, res:'Intercepted', rt:'Their #8 was marking the #10.', note:'Their midfield squeezed into the middle and their #8 was right on your #10.'},
+         1:{q:90, res:'Switch lands', rt:'Your winger is one v one with space.', note:'Their midfield squeezed into the middle, which shut both inside lanes. The switch to the free winger was the way out.'}}}],
+ rw: [
+  {move:{olm:{b:[79,29]}, oc1:{b:[96,8]}},
+   opts:{0:{ok:0, by:'olm', cut:[80.2,28], q:35, res:'Cut out', rt:'Their winger tracked the overlap.', note:'Their winger ran all the way back with your full-back, so the overlap was covered.'},
+         2:{ok:1, end:[93,3], q:88, res:'Free header', rt:'Your #9 rises unmarked.', note:'Their full-back stayed with the overlap and their centre-back got pulled across. The early cross found your #9 alone.'},
+         3:{q:50}}},
+  {move:{olm:{b:[79,29]}},
+   opts:{0:{ok:0, by:'olm', cut:[80.2,28], q:35, res:'Cut out', rt:'Their winger tracked the overlap.', note:'Their winger tracked the overlap, so the 2 v 1 never happened.'},
+         3:{q:82, res:'Smart reset', rt:'You keep the ball and switch the play.', note:'Their full-back had help and every forward option was covered. Keeping the ball to switch the play was the smart choice.'}}}],
+ ten: [
+  {move:{oc1:{b:[97,2]}, oc2:{b:[98,6]}, od:{b:[91,-5.5]}},
+   opts:{0:{ok:0, by:'oc1', cut:[97.5,1.9], q:40, res:'Cut out', rt:'Their centre-back had closed the gap.', note:'Both centre-backs dropped and closed the gap the #9 was running into.'},
+         1:{ok:1, end:[105.2,-2.8], q:88, res:'Goal!', rt:'Bottom corner from 20 metres.', note:'Both centre-backs dropped deep to block the run, and nobody stepped out to you. That is your cue to shoot.'},
+         3:{by:'od', cut:[88,-2.6], q:35}}},
+  {move:{oc1:{b:[97,2]}, orb:{b:[96,-10]}},
+   opts:{0:{ok:0, by:'oc1', cut:[97.5,1.9], q:40, res:'Cut out', rt:'Their centre-back had closed the gap.', note:'Their centre-back stepped across into the gap, so the through ball was covered.'},
+         1:{by:'od', cut:[88,-1.3], q:30, res:'Blocked', rt:'Their #6 got there first.', note:'Their #6 was closing you down fast, so there was no time to set and shoot.'},
+         2:{q:85, res:'Space out wide', rt:'Your winger can attack the box.', note:'Their #6 was on you and the centre-backs had the run covered. The winger was free because their full-back had tucked inside.'}}}],
+ gk: [
+  {move:{m1:{b:[30,-2]}, m2:{b:[22,26]}, s1:{b:[9,10]}},
+   opts:{0:{ok:0, by:'m2', cut:[22.4,28], q:35, res:'Intercepted', rt:'Their wide man jumped to your full-back.', note:'Their wide midfielder jumped onto your full-back, so that lane was the trap.'},
+         1:{cut:[6.6,10.3]},
+         2:{ok:1, end:[20.5,4.2], q:90, res:'Into feet', rt:'Your #6 turns with time.', note:'Their #8 stayed deep and their wide man jumped to your full-back, which left your #6 free to turn.'}}},
+  {move:{m1:{b:[21,6]}, m2:{b:[22,26]}, d1:{b:[44,6]}, d2:{b:[46,-6]}},
+   opts:{0:{ok:0, by:'m2', cut:[22.4,28], q:35, res:'Intercepted', rt:'Their wide man was marking your full-back.', note:'They went man for man, so your full-back had a player right on him.'},
+         2:{cut:[19,5.1]},
+         3:{ok:1, end:[62,-1], q:85, res:'Press bypassed', rt:'Your #9 runs onto it with their back line stranded.', note:'They went man for man with their centre-backs up near halfway. Going long turned their high press into a race your #9 could win.'}}}],
+ sw: [
+  {text:'1-1, 55th minute. Your right-back plays it inside to you. Your #9 has drifted out to the left.',
+   move:{dr:{b:[76,-19]}, p2:{b:[58,4]}, p3:{b:[64,-2]}},
+   opts:{0:{ok:0, by:'dr', cut:[76,-20.5], q:40, res:'Headed away', rt:'Their right-back was waiting for it.', note:'Their right-back had already moved across onto your #9, so the switch was covered.'},
+         1:{ok:1, end:[68.5,7.5], q:88, res:'Into feet', rt:'Your #10 turns between their lines.', note:'Their right-back was tight on your #9, but their midfield left the #10 open in the pocket.'}}},
+  {text:'1-1, 55th minute. Your right-back plays it inside to you. Your #9 has drifted out to the left.',
+   move:{dr:{b:[76,-19]}, dl:{b:[76,16]}},
+   opts:{0:{ok:0, by:'dr', cut:[76,-20.5], q:40, res:'Headed away', rt:'Their right-back was waiting for it.', note:'Their right-back had already moved across onto your #9.'},
+         2:{ok:1, end:[76,27], q:86, res:'Down the line', rt:'Your winger is away down the touchline.', note:'Your #10 dragged their full-back inside, and their right-back was already on your #9. The space was straight down the line.'}}}],
+ lb: [
+  {text:'0-0, 30th minute. Your partner plays it across to you. Look for the pass that breaks their press.',
+   move:{f1:{b:[40,16]}, f2:{b:[38,-12]}, m2:{b:[57,0.5]}},
+   opts:{0:{ok:0, by:'m2', cut:[57,1.6], q:35, res:'Intercepted', rt:'Their midfielder had stepped onto your #8.', note:'Their midfielder dropped onto your #8, so that pocket was closed.'},
+         1:{ok:1, end:[42.5,0], q:88, res:'Through the first line', rt:'Your #6 turns with time.', note:'Their strikers split wide to press the centre-backs, which left a big gap in the middle for your #6.'}}},
+  {text:'0-0, 30th minute. Your partner plays it across to you. Look for the pass that breaks their press.',
+   move:{f1:{b:[38,5]}, m1:{b:[54,3.5]}, eight:{b:[55,1]}, d1:{b:[58,4]}, d2:{b:[58,-5]}, st:{b:[60,2]}},
+   opts:{0:{ok:0, by:'m1', cut:[53,1.9], q:35, res:'Intercepted', rt:'Their midfielder was right on your #8.', note:'They pushed up to press, and your #8 had a man right on him.'},
+         2:{q:50},
+         3:{ok:1, end:[76,1], q:86, res:'In behind', rt:'Your #9 is through on goal.', note:'They pushed everyone up to press, which left a huge space behind their back line for your #9 to run into.'}}}],
+ w1: [
+  {move:{dm:{b:[90,6]}, fb2:{b:[96,-4]}},
+   opts:{0:{ok:0, by:'dm', cut:[91,8.6], q:40, res:'Cut out', rt:'Their #6 tracked your #10.', note:'Their #6 tracked your #10 all the way to the penalty spot.'},
+         1:{q:90, res:'Back-post header', rt:'Your winger heads it in at the back post.', note:'Their #6 tracked your #10 and their back-post defender got sucked in. The chip to the back post was free.'}}},
+  {move:{dm:{b:[90,6]}, st:{b:[97,7]}, cb1:{b:[100,2]}},
+   opts:{0:{ok:0, by:'dm', cut:[91,8.6], q:40, res:'Cut out', rt:'Their #6 tracked your #10.', note:'Their #6 tracked your #10 to the penalty spot.'},
+         1:{ok:0, by:'fb2', cut:[98,-11], q:45, res:'Headed clear', rt:'Their full-back was marking the back post.', note:'Their full-back was right with your winger at the back post.'},
+         2:{ok:1, end:[98.5,7.5], q:86, res:'Near-post flick', rt:'Your #9 gets in front of his marker.', note:'Your #9 attacked the near post ahead of his marker, and the cut-back was covered. A hard, low ball to the near post was the one.'}}}],
+ ck: [
+  {move:{f1:{b:[17,3]}, f2:{b:[14,9]}},
+   opts:{0:{ok:0, by:'f2', cut:[13.8,9], q:35, res:'Intercepted', rt:'Their forward was standing in the gap.', note:'Both of their forwards shifted across to our right and closed that gap.'},
+         3:{ok:1, end:[14.5,-21.5], q:90, res:'Press broken', rt:'Your left centre-back steps out with space.', note:'Both of their forwards shifted across to our right, so the gap opened on the other side.'}}},
+  {move:{f2:{b:[14,9]}, m1:{b:[26,2]}},
+   opts:{0:{ok:0, by:'f2', cut:[13.8,9], q:35, res:'Intercepted', rt:'Their forward was standing in the gap.', note:'Their forward stepped into the gap between you and the centre-back.'},
+         1:{q:40},
+         2:{ok:1, end:[20,1], q:85, res:'Turned and away', rt:'Nobody followed you, so you face the whole pitch.', note:'Their midfielder did not follow you when you checked short. With nobody on your back, turning was the quickest way to face the pitch.'}}}],
+ ca: [
+  {move:{d1:{b:[80,10]}, d2:{b:[80,-12]}},
+   opts:{0:{ok:0, by:'d1', cut:[80,9.8], q:40, res:'Cut out', rt:'Their centre-back went wide to cover him.', note:'Their centre-back went wide to cover the right winger.'},
+         1:{ok:1, end:[81,-2], q:90, res:'Through the middle', rt:'Your #9 is clean through between the centre-backs.', note:'Both centre-backs went wide to cover your wingers and left the middle open.'},
+         3:{ok:1, end:[74,0.5], q:35, res:'Chance slows', rt:'Their defenders recover behind the ball.', note:'Holding on gave their defenders time to get back. Release the ball while the overload is on.'}}},
+  {move:{fb:{b:[79,13]}, d2:{b:[80,-4]}},
+   opts:{0:{ok:0, by:'fb', cut:[79.5,9.4], q:40, res:'Cut out', rt:'Their full-back had recovered.', note:'Their full-back got back in time to cover your right winger.'},
+         2:{q:88, res:'Free on the left', rt:'Your winger is away with only the keeper to beat.', note:'Their full-back got back to your right winger and both centre-backs stayed central. The free man was out on the left.'}}}],
+ lg: [
+  {text:'0-0, 60th minute. Your partner passes across to you. Your #9 is looking to run.',
+   move:{d1:{b:[76,4]}, d2:{b:[76,-6]}, d3:{b:[76,15]}, d4:{b:[74,-20]}, p2:{b:[50,-6]}},
+   opts:{0:{ok:0, by:'d3', cut:[79,14], q:40, res:'Mopped up', rt:'Their defence was already deep.', note:'Their back line dropped deep, so there was no space behind it.'},
+         1:{ok:1, end:[53.5,2], q:88, res:'Into feet', rt:'Your #8 turns in front of their defence.', note:'Their back line dropped deep, which opened space in front of their defence, where your #8 was free.'}}},
+  {text:'0-0, 60th minute. Your partner passes across to you. Your #9 is looking to run.',
+   move:{p1:{b:[57,18]}, p2:{b:[52,1]}, d3:{b:[72,15]}},
+   opts:{0:{ok:0, by:'d3', cut:[79,14], q:40, res:'Covered', rt:'Their full-back dropped to cover the run.', note:'Their full-back read the run and dropped to cover it.'},
+         1:{cut:[51.3,3.9]},
+         2:{q:50},
+         3:{ok:1, end:[56,9], q:86, res:'Space to drive into', rt:'Nobody steps out, so you carry it into midfield.', note:'Nobody pressed you and every pass was covered. Driving into the space forces one of their players to step out, and that opens a pass.'}}}]
+};
+for (const s of SC) s.vars = VARS[s.id] || [];
+const BEST = (() => { try { return JSON.parse(localStorage.getItem('piq-best') || '{}'); } catch (e) { return {}; } })();
+const saveBest = () => { try { localStorage.setItem('piq-best', JSON.stringify(BEST)); } catch (e) {} };
+
+// ---------- helpers ----------
+const lerp = (a, b, t) => a + (b - a) * t;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const ease = t => t * t * (3 - 2 * t);
+const angDiff = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
+const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// ---------- three.js world ----------
+const cv = $('#c');
+const R = new THREE.WebGLRenderer({canvas: cv, antialias: true});
+R.setPixelRatio(Math.min(devicePixelRatio || 1, 2));
+const scene = new THREE.Scene();
+const cam = new THREE.PerspectiveCamera(70, 1, .1, 600);
+scene.fog = new THREE.Fog(0x0b1a12, 110, 280);
+{
+  const g = document.createElement('canvas'); g.width = 2; g.height = 256;
+  const x = g.getContext('2d'), gr = x.createLinearGradient(0, 0, 0, 256);
+  gr.addColorStop(0, '#04070f'); gr.addColorStop(.55, '#0d1f33'); gr.addColorStop(1, '#1f3a3a');
+  x.fillStyle = gr; x.fillRect(0, 0, 2, 256);
+  scene.background = new THREE.CanvasTexture(g);
+}
+scene.add(new THREE.HemisphereLight(0xe6f0ff, 0x1d4a26, .8));
+const sun = new THREE.DirectionalLight(0xffffff, .75); sun.position.set(30, 60, 25); scene.add(sun);
+
+function pitchTex() {
+  const W = 2100, H = 1360, k = W / 105, g = document.createElement('canvas'); g.width = W; g.height = H;
+  const x = g.getContext('2d');
+  for (let i = 0; i < 14; i++) { x.fillStyle = i % 2 ? '#2f8a43' : '#287a3a'; x.fillRect(i * W / 14, 0, W / 14 + 1, H); }
+  x.strokeStyle = 'rgba(255,255,255,.9)'; x.lineWidth = .14 * k;
+  const X = v => v * k, Z = v => (v + 34) * k;
+  x.strokeRect(X(0), Z(-34), X(105), 68 * k);
+  x.beginPath(); x.moveTo(X(52.5), Z(-34)); x.lineTo(X(52.5), Z(34)); x.stroke();
+  x.beginPath(); x.arc(X(52.5), Z(0), 9.15 * k, 0, 7); x.stroke();
+  for (const s of [0, 1]) {
+    const e = s ? 105 : 0, d = s ? -1 : 1;
+    x.strokeRect(Math.min(X(e), X(e + d * 16.5)), Z(-20.16), 16.5 * k, 40.32 * k);
+    x.strokeRect(Math.min(X(e), X(e + d * 5.5)), Z(-9.16), 5.5 * k, 18.32 * k);
+    x.beginPath(); x.arc(X(e + d * 11), Z(0), 9.15 * k, s ? Math.PI - .93 : -.93, s ? Math.PI + .93 : .93); x.stroke();
+    x.fillStyle = '#fff'; x.beginPath(); x.arc(X(e + d * 11), Z(0), .2 * k, 0, 7); x.fill();
+  }
+  x.fillStyle = '#fff'; x.beginPath(); x.arc(X(52.5), Z(0), .25 * k, 0, 7); x.fill();
+  const t = new THREE.CanvasTexture(g); t.anisotropy = R.capabilities.getMaxAnisotropy(); return t;
+}
+{
+  const around = new THREE.Mesh(new THREE.PlaneGeometry(140, 100), new THREE.MeshLambertMaterial({color: 0x236b33}));
+  around.rotation.x = -Math.PI / 2; around.position.set(52.5, -.02, 0); scene.add(around);
+  const p = new THREE.Mesh(new THREE.PlaneGeometry(105, 68), new THREE.MeshLambertMaterial({map: pitchTex()}));
+  p.rotation.x = -Math.PI / 2; p.position.set(52.5, 0, 0); scene.add(p);
+}
+// goals
+{
+  const m = new THREE.MeshLambertMaterial({color: 0xffffff});
+  const net = new THREE.MeshBasicMaterial({color: 0xffffff, transparent: true, opacity: .14, side: THREE.DoubleSide, depthWrite: false});
+  for (const [gx, d] of [[105, 1], [0, -1]]) {
+    for (const z of [-3.66, 3.66]) { const post = new THREE.Mesh(new THREE.CylinderGeometry(.06, .06, 2.44, 8), m); post.position.set(gx, 1.22, z); scene.add(post); }
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(.06, .06, 7.32, 8), m); bar.rotation.x = Math.PI / 2; bar.position.set(gx, 2.44, 0); scene.add(bar);
+    const n = new THREE.Mesh(new THREE.BoxGeometry(2, 2.44, 7.32), net); n.position.set(gx + d, 1.22, 0); scene.add(n);
+  }
+}
+// stands, boards, floodlights
+{
+  const g = document.createElement('canvas'); g.width = 512; g.height = 64; const x = g.getContext('2d');
+  x.fillStyle = '#1a2230'; x.fillRect(0, 0, 512, 64);
+  const cols = ['#e8463a', '#f4f6ef', '#36b1f0', '#ffd23f', '#2a3242', '#c9cfd8'];
+  for (let i = 0; i < 1400; i++) { x.fillStyle = cols[(Math.random() * cols.length) | 0]; x.globalAlpha = .35 + Math.random() * .5; x.fillRect(Math.random() * 512, Math.random() * 64, 3, 4); }
+  const crowd = new THREE.CanvasTexture(g); crowd.wrapS = THREE.RepeatWrapping; crowd.repeat.set(8, 1);
+  const cm = new THREE.MeshLambertMaterial({map: crowd});
+  const b = document.createElement('canvas'); b.width = 512; b.height = 32; const y = b.getContext('2d');
+  y.fillStyle = '#0d2a1a'; y.fillRect(0, 0, 512, 32); y.fillStyle = '#ffd23f'; y.font = '800 22px sans-serif';
+  for (let i = 0; i < 4; i++) y.fillText('PITCH IQ', 18 + i * 128, 24);
+  const bt = new THREE.CanvasTexture(b); bt.wrapS = THREE.RepeatWrapping; bt.repeat.set(6, 1);
+  const bm = new THREE.MeshBasicMaterial({map: bt});
+  const stand = (len, x0, z0, ry) => {
+    const s = new THREE.Group();
+    for (let i = 0; i < 9; i++) { const t = new THREE.Mesh(new THREE.BoxGeometry(len, 1.3, 2.4), cm); t.position.set(0, .65 + i * 1.3, 2 + i * 2.4); s.add(t); }
+    const bd = new THREE.Mesh(new THREE.BoxGeometry(len * .9, .9, .15), bm); bd.position.set(0, .45, -1.2); s.add(bd);
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(len, .4, 16), new THREE.MeshLambertMaterial({color: 0x161c24})); roof.position.set(0, 16, 12); s.add(roof);
+    s.position.set(x0, 0, z0); s.rotation.y = ry; scene.add(s);
+  };
+  stand(120, 52.5, 38, 0); stand(120, 52.5, -38, Math.PI); stand(80, 109, 0, Math.PI / 2); stand(80, -4, 0, -Math.PI / 2);
+  const lm = new THREE.MeshBasicMaterial({color: 0xfffbe6}), pm = new THREE.MeshLambertMaterial({color: 0x5a6470});
+  for (const [lx, lz] of [[-14, -50], [-14, 50], [119, -50], [119, 50]]) {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(.5, .7, 42, 8), pm); pole.position.set(lx, 21, lz); scene.add(pole);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(6, 3.5, .6), lm); head.position.set(lx, 43, lz); head.lookAt(52.5, 0, 0); scene.add(head);
+  }
+}
+// players
+const G = {
+  body: new THREE.CylinderGeometry(.24, .2, .62, 10), shorts: new THREE.CylinderGeometry(.21, .23, .24, 10),
+  leg: new THREE.CylinderGeometry(.075, .06, .74, 6).translate(0, -.37, 0), arm: new THREE.CylinderGeometry(.055, .045, .56, 6).translate(0, -.28, 0),
+  head: new THREE.SphereGeometry(.13, 12, 10), shadow: new THREE.CircleGeometry(.5, 16).rotateX(-Math.PI / 2), ring: new THREE.RingGeometry(.8, 1.05, 36).rotateX(-Math.PI / 2)
+};
+const shadowM = new THREE.MeshBasicMaterial({color: 0, transparent: true, opacity: .3, depthWrite: false});
+const KIT = {us: [0x36b1f0, 0xf4f6ef, 0x36b1f0], them: [0xe8463a, 0x1b1b1b, 0xe8463a], gk: [0xf5d000, 0x222222, 0xf5d000], ugk: [0x2bd17e, 0x1b1b1b, 0x2bd17e]};
+const SKIN = [0xe8c4a0, 0xc68e62, 0x8d5a3b, 0xf0d2b6, 0x6b4430];
+function makePlayer(team, i) {
+  const [shirt, shorts, socks] = KIT[team], g = new THREE.Group();
+  const sm = new THREE.MeshLambertMaterial({color: shirt}), skin = new THREE.MeshLambertMaterial({color: SKIN[i % SKIN.length]});
+  const body = new THREE.Mesh(G.body, sm); body.position.y = 1.22; g.add(body);
+  const sh = new THREE.Mesh(G.shorts, new THREE.MeshLambertMaterial({color: shorts})); sh.position.y = .86; g.add(sh);
+  const head = new THREE.Mesh(G.head, skin); head.position.y = 1.67; g.add(head);
+  const legs = [], arms = [], lm = new THREE.MeshLambertMaterial({color: socks});
+  for (const s of [-1, 1]) {
+    const l = new THREE.Mesh(G.leg, lm); l.position.set(0, .8, s * .1); g.add(l); legs.push(l);
+    const a = new THREE.Mesh(G.arm, skin); a.position.set(0, 1.5, s * .29); g.add(a); arms.push(a);
+  }
+  const sd = new THREE.Mesh(G.shadow, shadowM); sd.position.y = .02; g.add(sd);
+  scene.add(g); return {g, legs, arms, ph: Math.random() * 6, prev: null};
+}
+const ball = new THREE.Mesh(new THREE.SphereGeometry(.11, 16, 12), new THREE.MeshLambertMaterial({color: 0xffffff}));
+const ballSh = new THREE.Mesh(new THREE.CircleGeometry(.14, 12).rotateX(-Math.PI / 2), shadowM);
+scene.add(ball, ballSh);
+
+// ---------- state ----------
+let diff = 'medium', sc = null, si = 0, P = {}, phase = 'menu', simT = 0, decT0 = 0, cur = null, outT = 0, replay = false;
+let off = [0, 0], keys = {}, yaw = 0, pitch = -.08, yawT = null, dragging = false, scans = 0, wasAway = false, last = performance.now(), rec = null, bannerAt = 0;
+const rings = [];
+
+const lastV = {};
+function shuffle(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+function build(base, vi) {
+  const s = JSON.parse(JSON.stringify(base, (k, val) => k === 'vars' ? undefined : val)), v = vi ? base.vars[vi - 1] : {};
+  if (v.text) s.text = v.text;
+  if (v.move) s.pl.forEach(p => { const m = v.move[p[0]]; if (m) { if (m.a) p[3] = m.a; if (m.b) p[4] = m.b; } });
+  if (v.opts) for (const k in v.opts) Object.assign(s.opts[k], v.opts[k]);
+  s.vi = vi; shuffle(s.opts); return s;
+}
+function load(i, keep) {
+  const base = SC[i], n = 1 + base.vars.length;
+  let vi = keep && sc && si === i ? sc.vi : Math.floor(Math.random() * n);
+  if (!keep && n > 1 && vi === lastV[base.id]) vi = (vi + 1 + Math.floor(Math.random() * (n - 1))) % n;
+  lastV[base.id] = vi;
+  si = i; sc = build(base, vi);
+  for (const id in P) scene.remove(P[id].g);
+  P = {};
+  sc.pl.forEach(([id, team, lab, a, b], k) => { P[id] = Object.assign(makePlayer(team, k), {id, team, lab, a, b}); });
+  rings.forEach(r => scene.remove(r)); rings.length = 0;
+  sc.opts.forEach((o, n) => {
+    o.n = n + 1;
+    const r = new THREE.Mesh(G.ring, new THREE.MeshBasicMaterial({color: 0xffd23f, transparent: true, opacity: .9, depthWrite: false}));
+    r.visible = false; scene.add(r); rings.push(r);
+  });
+  sc.best = sc.opts.reduce((a, o) => o.q > a.q ? o : a);
+  simT = 0; cur = null; outT = 0; scans = 0; wasAway = false; off = [0, 0];
+}
+const posAt = (p, t) => { const k = ease(clamp(t / sc.T, 0, 1)); return [lerp(p.a[0], p.b[0], k), lerp(p.a[1], p.b[1], k)]; };
+const youAt = t => { const k = ease(clamp(t / sc.T, 0, 1)); return [lerp(sc.you.a[0], sc.you.b[0], k) + off[0], lerp(sc.you.a[1], sc.you.b[1], k) + off[1]]; };
+const youEnd = () => youAt(sc.T);
+const feet = () => { const y = youEnd(); return [y[0] + .6, y[1]]; };
+const outU = () => cur ? clamp(outT / cur.dur, 0, 1) : 0;
+function posOf(p) {
+  let q = posAt(p, simT);
+  if (cur) {
+    let to = null, u = outU();
+    if (cur.ok && cur.to === p.id) to = cur.end;
+    if (!cur.ok && cur.by === p.id) { to = cur.cut; u = clamp(u * 1.3, 0, 1); }
+    if (to) { const e = ease(u); q = [lerp(p.b[0], to[0], e), lerp(p.b[1], to[1], e)]; }
+  }
+  return q;
+}
+function youPos() {
+  if (cur && cur.k === 'carry') { const u = ease(outU()), E = cur.end, b = youEnd(); return [lerp(b[0], E[0] - .9, u), lerp(b[1], E[1], u)]; }
+  return youAt(simT);
+}
+function ballPos() {
+  if (!cur && sc.dribble) { const y = youAt(simT); return [y[0] + .6, .11, y[1]]; }
+  if (!cur) {
+    const ps = P[sc.from], F = feet(), flight = clamp(dist(posAt(ps, sc.T), F) / 15, .9, 1.8), Tk = sc.T - flight;
+    const off = (t) => { const p = posAt(ps, t), d = dist(p, F) || 1; return [p[0] + (F[0] - p[0]) / d * .5, p[1] + (F[1] - p[1]) / d * .5]; };
+    if (simT < Tk) { const b = off(simT); return [b[0], .11, b[1]]; }
+    const s = off(Tk), u = (simT - Tk) / flight; return [lerp(s[0], F[0], u), .11, lerp(s[1], F[1], u)];
+  }
+  const u = outU(), F = feet(), E = cur.ok ? (cur.k === 'shot' ? cur.end : cur.end) : cur.cut;
+  const h = cur.k === 'long' ? clamp(dist(F, E) * .12, 3.2, 9) : {pass: .15, chip: 4.5, shot: .9, carry: 0}[cur.k];
+  const endY = cur.k === 'shot' ? 1.1 : (cur.k === 'long' && !cur.ok ? 2.0 : 0);
+  return [lerp(F[0], E[0], u), .11 + lerp(0, endY, u) + 4 * h * u * (1 - u), lerp(F[1], E[1], u)];
+}
+
+// ---------- UI ----------
+const unlock = () => { try { if (document.pointerLockElement) document.exitPointerLock(); } catch (e) {} };
+const show = id => { if (id) unlock(); for (const s of ['menu', 'brief', 'review']) $('#' + s).classList.toggle('on', s === id); };
+function renderMenu() {
+  $('#diff').innerHTML = Object.entries(DIFF).map(([k, d]) => `<button aria-pressed="${k === diff}" data-d="${k}">${d.label}<small>${d.lim} s clock</small></button>`).join('');
+  $('#list').innerHTML = SC.map((s, i) => `<button class="sc" data-i="${i}"><span class="pos">${esc(s.pos)}</span><span class="nm">${esc(s.name)}</span><span class="q">${esc(s.q)}</span><span class="best"><b>${BEST[s.id + diff] ?? '–'}</b>best</span></button>`).join('');
+}
+$('#diff').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { diff = b.dataset.d; renderMenu(); } });
+$('#list').addEventListener('click', e => { const b = e.target.closest('.sc'); if (b) openBrief(+b.dataset.i); });
+function toMenu() { phase = 'menu'; load(si, true); setHud(); renderMenu(); show('menu'); }
+function openBrief(i) {
+  load(i); phase = 'brief'; setHud();
+  $('#bPos').textContent = sc.pos + ' · ' + DIFF[diff].label + ' · Version ' + 'ABC'[sc.vi]; $('#bName').textContent = sc.name; $('#bText').textContent = sc.text;
+  aimAtBall(true); show('brief');
+}
+$('#back1').onclick = toMenu;
+const FINE = matchMedia('(pointer: fine)').matches;
+$('#hint').textContent = FINE ? 'Click to look with the mouse. WASD to move, Shift to sprint, Esc frees the cursor.' : 'Drag to look around. Scan before the ball arrives.';
+$('#ctl').textContent = FINE ? 'Click the pitch, then move the mouse to look around and WASD to move (Shift to sprint). Check what is around you before the freeze.' : 'Drag to look away from the ball and check what is around you before the freeze.';
+$('#kick').onclick = () => { show(null); phase = 'play'; simT = 0; setHud(); if (!FINE) $('#hint').textContent = motionOn ? 'Turn your phone to look around. Scan before the ball arrives.' : 'Drag to look around. Scan before the ball arrives.'; $('#hint').style.display = 'block'; setTimeout(() => { $('#hint').style.display = 'none'; }, 5000); };
+function setHud() {
+  const inGame = ['play', 'decide', 'outcome'].includes(phase);
+  $('#hud').style.display = inGame ? 'flex' : 'none';
+  $('#scen').textContent = sc ? sc.name : '';
+  $('#scanN').textContent = scans;
+  $('#clock').style.display = phase === 'decide' ? 'block' : 'none';
+  $('#tag').style.display = phase === 'decide' ? 'block' : 'none';
+  $('#opts').style.display = phase === 'decide' ? 'grid' : 'none';
+  $('#markers').style.display = phase === 'decide' ? 'block' : 'none';
+  rings.forEach(r => r.visible = phase === 'decide');
+}
+function aimAtBall(snap) { const y = youPos(), b = ballPos(), a = Math.atan2(b[2] - y[1], b[0] - y[0]); if (snap) { yaw = a; yawT = null; } else yawT = a; }
+function enterDecide() {
+  unlock(); keys = {};
+  phase = 'decide'; decT0 = performance.now(); setHud();
+  const y = youPos(); let cx = 0, cz = 0;
+  sc.opts.forEach(o => { const t = optPoint(o); cx += t[0]; cz += t[1]; });
+  yawT = Math.atan2(cz / 4 - y[1], cx / 4 - y[0]); pitch = -.06;
+  $('#markers').innerHTML = sc.opts.map(o => `<button class="mk" data-n="${o.n}" aria-label="Option ${o.n}: ${esc(o.l)}"><i>${o.n}</i><span>${esc(o.l)}</span></button>`).join('');
+  $('#opts').innerHTML = sc.opts.map(o => `<button data-n="${o.n}"><i>${o.n}</i><span>${esc(o.l)}</span></button>`).join('');
+  sc.opts.forEach((o, n) => { const t = optPoint(o); rings[n].position.set(t[0], .03, t[1]); rings[n].material.color.set(0xffd23f); });
+  try { navigator.vibrate && navigator.vibrate(30); } catch (e) {}
+}
+const optPoint = o => o.to ? posAt(P[o.to], sc.T) : (o.k === 'shot' ? [104, 0] : o.end);
+function pick(n) { if (phase === 'decide') choose(sc.opts[n - 1], (performance.now() - decT0) / 1000); }
+$('#markers').addEventListener('click', e => { const b = e.target.closest('.mk'); if (b) pick(+b.dataset.n); });
+$('#opts').addEventListener('click', e => { const b = e.target.closest('button'); if (b) pick(+b.dataset.n); });
+function start(o) {
+  cur = o; outT = 0; $('#banner').style.display = 'none'; bannerAt = 0;
+  const E = o.ok ? o.end : o.cut, d = dist(feet(), E), sp = {pass: 17, long: 21, chip: 15, shot: 26, carry: 6}[o.k];
+  o.dur = clamp(d / sp, .55, 2.2);
+}
+function choose(o, t) {
+  const d = DIFF[diff], timeout = !o;
+  if (timeout) o = sc.opts.reduce((a, x) => x.q < a.q ? x : a);
+  const tf = timeout ? 0 : (t <= 1 ? 1 : 1 - .25 * (t - 1) / (d.lim - 1));
+  rec = {o, t: timeout ? d.lim : t, tf, timeout, q: timeout ? 0 : o.q, score: Math.round((timeout ? 0 : o.q) * tf), scans};
+  phase = 'outcome'; replay = false; setHud(); start(o);
+}
+function finish() {
+  if (!replay) {
+    const k = sc.id + diff, prev = BEST[k];
+    rec.isBest = prev == null || rec.score > prev;
+    if (rec.isBest) { BEST[k] = rec.score; saveBest(); }
+  }
+  phase = 'review'; setHud(); $('#banner').style.display = 'none'; fillReview(); show('review');
+}
+function fillReview() {
+  const r = rec, o = r.o, b = sc.best;
+  $('#rScore').textContent = r.score;
+  $('#rVerdict').textContent = r.timeout ? 'Out of time' : o.q >= 85 ? 'Best option' : o.q >= 60 ? 'Good option' : o.q >= 40 ? 'Playable' : 'Poor choice';
+  $('#rQ').textContent = r.q + ' / 100';
+  $('#rT').textContent = r.timeout ? 'Timed out' : r.t.toFixed(2) + ' s ×' + r.tf.toFixed(2);
+  $('#rS').textContent = r.scans;
+  $('#rNote').textContent = r.timeout ? 'No decision is a decision: the press arrived and the ball was lost. ' + o.note : o.note;
+  $('#rBest').textContent = o === b && !r.timeout ? 'You found the best option.' + (r.isBest ? ' New personal best.' : '') : 'Best option: ' + b.n + '. ' + b.l + ' (' + b.q + '). ' + b.note;
+  $('#rScan').textContent = r.scans === 0 ? 'No scans before the freeze. Look away from the ball once or twice before you get it.' :
+    r.scans === 1 ? 'One scan. Top midfielders check over their shoulder several times before receiving.' : r.scans + ' scans before the freeze. Good habit.';
+  $('#rMap').innerHTML = miniMap();
+  $('#next').textContent = si < SC.length - 1 ? 'Next scenario' : 'Back to the start';
+}
+function miniMap() {
+  const k = 3.2, m = 10, X = x => (m + x * k).toFixed(1), Y = z => (m + (z + 34) * k).toFixed(1), L = 'rgba(255,255,255,.7)', W = 105 * k + 2 * m, H = 68 * k + 2 * m;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Top-down map of the freeze frame"><rect width="${W}" height="${H}" fill="#287a3a"/>`;
+  s += `<rect x="${X(0)}" y="${Y(-34)}" width="${105 * k}" height="${68 * k}" fill="none" stroke="${L}"/><line x1="${X(52.5)}" y1="${Y(-34)}" x2="${X(52.5)}" y2="${Y(34)}" stroke="${L}"/>`;
+  s += `<circle cx="${X(52.5)}" cy="${Y(0)}" r="${9.15 * k}" fill="none" stroke="${L}"/>`;
+  s += `<rect x="${X(88.5)}" y="${Y(-20.16)}" width="${16.5 * k}" height="${40.32 * k}" fill="none" stroke="${L}"/><rect x="${X(0)}" y="${Y(-20.16)}" width="${16.5 * k}" height="${40.32 * k}" fill="none" stroke="${L}"/>`;
+  s += `<rect x="${X(105)}" y="${Y(-3.66)}" width="5" height="${7.32 * k}" fill="#fff"/><rect x="${(+X(0) - 5).toFixed(1)}" y="${Y(-3.66)}" width="5" height="${7.32 * k}" fill="#fff"/>`;
+  const y = youEnd(), arrow = (o, col, dash) => { const t = o.ok ? o.end || [104.5, 0] : o.cut; return `<line x1="${X(y[0])}" y1="${Y(y[1])}" x2="${X(t[0])}" y2="${Y(t[1])}" stroke="${col}" stroke-width="3" ${dash ? 'stroke-dasharray="6 5"' : ''} stroke-linecap="round"/><circle cx="${X(t[0])}" cy="${Y(t[1])}" r="4" fill="${col}"/>`; };
+  const bt = sc.best; if (rec.o !== bt || rec.timeout) s += arrow(bt, '#5fe08a', true);
+  s += arrow(rec.o, rec.o.ok && !rec.timeout ? '#ffd23f' : '#ff8a80', false);
+  for (const id in P) { const p = P[id], q = p.b, c = p.team === 'us' || p.team === 'ugk' ? '#36b1f0' : '#e8463a';
+    s += `<circle cx="${X(q[0])}" cy="${Y(q[1])}" r="5.5" fill="${c}" stroke="#08120d" stroke-width="1.5"/>`;
+    if (p.lab) s += `<text x="${X(q[0])}" y="${(+Y(q[1]) - 8).toFixed(1)}" fill="#fff" font-size="9" font-family="Barlow" text-anchor="middle">${esc(p.lab)}</text>`; }
+  s += `<circle cx="${X(y[0])}" cy="${Y(y[1])}" r="7.5" fill="#ffd23f" stroke="#08120d" stroke-width="2"/><text x="${X(y[0])}" y="${(+Y(y[1]) + 18).toFixed(1)}" fill="#ffd23f" font-size="10" font-weight="600" font-family="Barlow" text-anchor="middle">YOU</text>`;
+  return s + '</svg>';
+}
+$('#watch').onclick = () => { show(null); phase = 'outcome'; replay = true; setHud(); start(sc.best); $('#scen').textContent = 'Best option'; };
+$('#retry').onclick = () => openBrief(si);
+$('#next').onclick = () => { si < SC.length - 1 ? openBrief(si + 1) : toMenu(); };
+$('#toMenu').onclick = toMenu;
+
+// ---------- motion look (phone) ----------
+const COARSE = matchMedia('(pointer: coarse)').matches;
+let motionOn = false, gotMotion = false, lastH = null, lastP = null;
+const zee = new THREE.Vector3(0, 0, 1), eu = new THREE.Euler(), qs = new THREE.Quaternion(), qx = new THREE.Quaternion(-Math.sqrt(.5), 0, 0, Math.sqrt(.5)), qd = new THREE.Quaternion(), fv = new THREE.Vector3();
+function onOri(e) {
+  if (e.alpha == null || e.beta == null) return;
+  gotMotion = true;
+  const d = Math.PI / 180, so = ((screen.orientation && screen.orientation.angle) || window.orientation || 0) * d;
+  eu.set(e.beta * d, e.alpha * d, -e.gamma * d, 'YXZ'); qd.setFromEuler(eu); qd.multiply(qx); qd.multiply(qs.setFromAxisAngle(zee, -so));
+  fv.set(0, 0, -1).applyQuaternion(qd);
+  const h = Math.atan2(fv.x, -fv.z), p = Math.asin(clamp(fv.y, -1, 1));
+  if (motionOn && lastH !== null && phase !== 'menu' && phase !== 'review' && Math.abs(p) < 1.35) {
+    yaw += angDiff(h, lastH); pitch = clamp(pitch + (p - lastP), -.6, .35);
+  }
+  lastH = h; lastP = p;
+}
+function motionLabel() { $('#motion').textContent = motionOn ? 'Motion look is on (tap to turn off)' : 'Turn on motion look'; }
+async function toggleMotion() {
+  const msg = t => { $('#motionMsg').textContent = t; };
+  if (motionOn) { motionOn = false; motionLabel(); msg('Drag to look around.'); return; }
+  try {
+    if (typeof DeviceOrientationEvent === 'undefined') throw new Error('none');
+    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+      const r = await DeviceOrientationEvent.requestPermission();
+      if (r !== 'granted') throw new Error('denied');
+    }
+    addEventListener('deviceorientation', onOri);
+    motionOn = true; lastH = null; motionLabel(); msg('Turn your phone to look around. You can still drag to adjust.');
+    setTimeout(() => { if (!gotMotion) { motionOn = false; motionLabel(); msg('Motion look is blocked here. Inside the Claude app the phone\u2019s motion sensors are switched off for pages like this one. Open the standalone version from your own website to use it, or drag to look.'); } }, 1500);
+  } catch (err) {
+    msg(String(err && err.message) === 'denied' ? 'Motion access was not allowed. To allow it, reload the page and tap Allow.' : 'Motion look is blocked here. Open the standalone version from your own website to use it, or drag to look.');
+  }
+}
+if (COARSE) { $('#motion').style.display = 'block'; motionLabel(); }
+$('#motion').onclick = toggleMotion;
+
+// ---------- input ----------
+let px = 0, py = 0;
+const locked = () => document.pointerLockElement === cv;
+function tryLock() { try { const r = cv.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (e) {} }
+cv.addEventListener('pointerdown', e => { if (phase === 'menu') return;
+  if (e.pointerType === 'mouse' && (phase === 'play' || phase === 'outcome') && !locked()) tryLock();
+  dragging = true; px = e.clientX; py = e.clientY; yawT = null; try { cv.setPointerCapture(e.pointerId); } catch (err) {} });
+cv.addEventListener('pointermove', e => {
+  if (locked()) { yaw += e.movementX * .0024; pitch = clamp(pitch - e.movementY * .0024, -.6, .35); yawT = null; $('#hint').style.display = 'none'; return; }
+  if (!dragging) return;
+  const k = 2.2 / Math.max(innerWidth, 400);
+  yaw += (e.clientX - px) * k; pitch = clamp(pitch - (e.clientY - py) * k, -.6, .35); px = e.clientX; py = e.clientY;
+  $('#hint').style.display = 'none';
+});
+const up = () => { dragging = false; };
+cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+const MOVE = {KeyW: 1, KeyA: 1, KeyS: 1, KeyD: 1, ShiftLeft: 1, ShiftRight: 1};
+addEventListener('keyup', e => { keys[e.code] = false; });
+addEventListener('blur', () => { keys = {}; });
+addEventListener('keydown', e => {
+  if (MOVE[e.code]) { keys[e.code] = true; if (phase === 'play') e.preventDefault(); }
+  if (e.key === 'ArrowLeft') { yaw -= .25; yawT = null; } if (e.key === 'ArrowRight') { yaw += .25; yawT = null; }
+  if (/^[1-4]$/.test(e.key)) pick(+e.key);
+});
+function resize() {
+  const w = innerWidth, h = innerHeight; R.setSize(w, h, false); cam.aspect = w / h;
+  cam.fov = clamp(2 * Math.atan(Math.tan(50 * Math.PI / 180) / cam.aspect) * 180 / Math.PI, 52, 88); cam.updateProjectionMatrix();
+}
+addEventListener('resize', resize); resize();
+
+// ---------- loop ----------
+const v3 = new THREE.Vector3();
+function frame(now) {
+  try { step(now); } catch (e) { console.error(e); }
+  requestAnimationFrame(frame);
+}
+function step(now) {
+  const dt = Math.min((now - last) / 1000, .05); last = now;
+  const d = DIFF[diff];
+  if (phase === 'play') {
+    simT += dt * (simT > sc.T - d.slow ? d.sf : 1);
+    const f = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0), r = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
+    if (f || r) {
+      const sp = (keys.ShiftLeft || keys.ShiftRight ? 7.5 : 5) * dt / Math.hypot(f, r), c = Math.cos(yaw), s = Math.sin(yaw);
+      let nx = off[0] + (f * c - r * s) * sp, nz = off[1] + (f * s + r * c) * sp;
+      const m = Math.hypot(nx, nz); if (m > 12) { nx *= 12 / m; nz *= 12 / m; }
+      const base = youAt(simT); nx = clamp(base[0] - off[0] + nx, 1, 104) - (base[0] - off[0]); nz = clamp(base[1] - off[1] + nz, -33, 33) - (base[1] - off[1]);
+      off = [nx, nz]; $('#hint').style.display = 'none';
+    }
+    if (simT >= sc.T) { simT = sc.T; enterDecide(); }
+    const y = youPos(), b = ballPos(), away = Math.abs(angDiff(yaw, Math.atan2(b[2] - y[1], b[0] - y[0]))) > 1.0;
+    if (away && !wasAway) { scans++; $('#scanN').textContent = scans; const el = $('#scans'); el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); }
+    wasAway = away;
+  } else if (phase === 'decide') {
+    const el = (now - decT0) / 1000, left = Math.max(0, d.lim - el);
+    $('#fill').style.transform = `scaleX(${left / d.lim})`; $('#clockT').textContent = left.toFixed(1) + ' s';
+    if (left <= 0) choose(null, d.lim);
+  } else if (phase === 'outcome') {
+    outT += dt;
+    if (!dragging && !locked()) aimAtBall(false);
+    if (outT >= cur.dur && !bannerAt) {
+      bannerAt = now; $('#bT').textContent = (replay ? 'Best: ' : '') + cur.res; $('#bP').textContent = cur.rt; $('#banner').style.display = 'block';
+      try { navigator.vibrate && navigator.vibrate(cur.ok ? 20 : [30, 40, 30]); } catch (e) {}
+    }
+    if (bannerAt && now - bannerAt > 1700) finish();
+  }
+  if (yawT !== null && !dragging) { const df = angDiff(yawT, yaw); yaw += df * Math.min(1, dt * (phase === 'outcome' ? 4 : 6)); if (Math.abs(df) < .002 && phase !== 'outcome') yawT = null; }
+
+  // players
+  if (sc) {
+    const bp = ballPos(), frozen = phase === 'decide' || phase === 'brief' || phase === 'review';
+    for (const id in P) {
+      const p = P[id], q = posOf(p);
+      p.g.position.set(q[0], 0, q[1]);
+      const sp = p.prev && dt > 0 ? dist(q, p.prev) / dt : 0;
+      if (!frozen) {
+        const face = sp > .4 ? Math.atan2(q[1] - p.prev[1], q[0] - p.prev[0]) : Math.atan2(bp[2] - q[1], bp[0] - q[0]);
+        p.g.rotation.y = -face;
+        p.ph += sp * dt * 3.4; const amp = Math.min(sp / 7, 1) * .75, sw = Math.sin(p.ph) * amp;
+        p.legs[0].rotation.z = sw; p.legs[1].rotation.z = -sw; p.arms[0].rotation.z = -sw * .8; p.arms[1].rotation.z = sw * .8;
+      }
+      p.prev = q;
+    }
+    ball.position.set(bp[0], bp[1], bp[2]); ballSh.position.set(bp[0], .021, bp[2]);
+    if (!['menu'].includes(phase)) {
+      const y = youPos(); cam.position.set(y[0], 1.68 + (phase === 'play' ? Math.sin(simT * 9) * .02 : 0), y[1]);
+      v3.set(y[0] + Math.cos(yaw) * Math.cos(pitch), 1.68 + Math.sin(pitch), y[1] + Math.sin(yaw) * Math.cos(pitch)); cam.lookAt(v3);
+    }
+  }
+  if (phase === 'menu') { const a = now * .00006; cam.position.set(52.5 + Math.cos(a) * 62, 26, Math.sin(a) * 52); cam.lookAt(60, 0, 0); }
+  if (phase === 'decide') {
+    const pulse = .75 + Math.sin(now / 180) * .2; rings.forEach(r => r.material.opacity = pulse);
+    const W = innerWidth, H = innerHeight, mks = $('#markers').children;
+    sc.opts.forEach((o, n) => {
+      const t = optPoint(o); v3.set(t[0], o.to ? 2.25 : 1.2, t[1]).project(cam);
+      let x = (v3.x * .5 + .5) * W, y = (-v3.y * .5 + .5) * H; const behind = v3.z > 1;
+      if (behind) { x = W - x; y = H * .45; }
+      const edge = behind || x < 40 || x > W - 40;
+      const mk = mks[n]; if (!mk) return;
+      mk.style.left = clamp(x, 40, W - 40) + 'px'; mk.style.top = clamp(y, 110, H - 120) + 'px'; mk.classList.toggle('edge', edge);
+    });
+  }
+  R.render(scene, cam);
+}
+load(0); renderMenu(); show('menu'); setHud();
+requestAnimationFrame(frame);
+}
+</script>
+</body>
+</html>

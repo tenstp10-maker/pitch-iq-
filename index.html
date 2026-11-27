@@ -111,7 +111,7 @@ h3{margin:0 0 4px;font:800 26px/1.1 "Barlow Condensed",Barlow,sans-serif}
     <p class="sub">Live the moment from a player's eyes. When play freezes, pick the pass before the clock runs out.</p>
     <div class="seg" id="diff" role="group" aria-label="Difficulty"></div>
     <div class="scs" id="list"></div>
-    <p class="small">Demo build: ten scenarios, each with three versions picked at random, so the right answer changes. Drag to look on a phone; mouse and WASD on a computer. Best scores stay on this device.</p>
+    <p class="small">Demo build: ten scenarios, each with three versions picked at random, so the right answer changes. Drag to look on a phone; mouse and WASD on a computer. Pick the Etihad or the Bernabéu on the scenario card. Best scores stay on this device.</p>
   </div>
 </section>
 
@@ -120,6 +120,8 @@ h3{margin:0 0 4px;font:800 26px/1.1 "Barlow Condensed",Barlow,sans-serif}
     <div class="sc pos" id="bPos" style="background:none;border:0;padding:0"></div>
     <h3 id="bName"></h3>
     <p class="sub" id="bText"></p>
+    <div class="seg" id="stad" role="group" aria-label="Stadium"></div>
+    <div class="seg" id="roof" role="group" aria-label="Bernabéu roof" style="grid-template-columns:repeat(2,1fr);display:none"></div>
     <ul class="tips">
       <li id="ctl">The ball is coming to you. Drag to look away from it and check what is around you.</li>
       <li>Each look of more than about 57° away from the ball counts as a scan.</li>
@@ -453,7 +455,7 @@ scene.fog = new THREE.Fog(0x0b1a12, 110, 280);
   x.fillStyle = gr; x.fillRect(0, 0, 2, 256);
   scene.background = new THREE.CanvasTexture(g);
 }
-scene.add(new THREE.HemisphereLight(0xe6f0ff, 0x1d4a26, .8));
+const hemi = new THREE.HemisphereLight(0xe6f0ff, 0x1d4a26, .8); scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffffff, .75); sun.position.set(30, 60, 25); scene.add(sun);
 
 function pitchTex() {
@@ -491,8 +493,8 @@ function pitchTex() {
     const n = new THREE.Mesh(new THREE.BoxGeometry(2, 2.44, 7.32), net); n.position.set(gx + d, 1.22, 0); scene.add(n);
   }
 }
-// stands, boards, floodlights
-{
+// stands, boards, floodlights (generic stadium)
+function buildGeneric(grp) {
   const g = document.createElement('canvas'); g.width = 512; g.height = 64; const x = g.getContext('2d');
   x.fillStyle = '#1a2230'; x.fillRect(0, 0, 512, 64);
   const cols = ['#e8463a', '#f4f6ef', '#36b1f0', '#ffd23f', '#2a3242', '#c9cfd8'];
@@ -509,15 +511,177 @@ function pitchTex() {
     for (let i = 0; i < 9; i++) { const t = new THREE.Mesh(new THREE.BoxGeometry(len, 1.3, 2.4), cm); t.position.set(0, .65 + i * 1.3, 2 + i * 2.4); s.add(t); }
     const bd = new THREE.Mesh(new THREE.BoxGeometry(len * .9, .9, .15), bm); bd.position.set(0, .45, -1.2); s.add(bd);
     const roof = new THREE.Mesh(new THREE.BoxGeometry(len, .4, 16), new THREE.MeshLambertMaterial({color: 0x161c24})); roof.position.set(0, 16, 12); s.add(roof);
-    s.position.set(x0, 0, z0); s.rotation.y = ry; scene.add(s);
+    s.position.set(x0, 0, z0); s.rotation.y = ry; grp.add(s);
   };
   stand(120, 52.5, 38, 0); stand(120, 52.5, -38, Math.PI); stand(80, 109, 0, Math.PI / 2); stand(80, -4, 0, -Math.PI / 2);
   const lm = new THREE.MeshBasicMaterial({color: 0xfffbe6}), pm = new THREE.MeshLambertMaterial({color: 0x5a6470});
   for (const [lx, lz] of [[-14, -50], [-14, 50], [119, -50], [119, 50]]) {
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(.5, .7, 42, 8), pm); pole.position.set(lx, 21, lz); scene.add(pole);
-    const head = new THREE.Mesh(new THREE.BoxGeometry(6, 3.5, .6), lm); head.position.set(lx, 43, lz); head.lookAt(52.5, 0, 0); scene.add(head);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(.5, .7, 42, 8), pm); pole.position.set(lx, 21, lz); grp.add(pole);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(6, 3.5, .6), lm); head.position.set(lx, 43, lz); head.lookAt(52.5, 0, 0); grp.add(head);
   }
 }
+// ---------- stadium select (Etihad, Bernabéu) ----------
+// Simplified, code-built bowls traced from public photos and plans. Pitch 0..105 (x), -34..34 (z).
+const STADIUMS = {
+  generic: {short: 'Generic', sub: 'Training', build: buildGeneric},
+  etihad: {short: 'Etihad', sub: 'Manchester', build: buildEtihad},
+  bernabeu: {short: 'Bernabéu', sub: 'Madrid', build: buildBernabeu}
+};
+let stadium = 'generic', roofClosed = false, stadG = null, scoreboard = null, scrTxt = '';
+const builtStadiums = {};
+try { const s = localStorage.getItem('piq-stadium'); if (STADIUMS[s]) stadium = s; roofClosed = localStorage.getItem('piq-roof') === 'closed'; } catch (e) {}
+
+function crowdTex(base, cols) {
+  const g = document.createElement('canvas'); g.width = 512; g.height = 128; const x = g.getContext('2d');
+  x.fillStyle = base; x.fillRect(0, 0, 512, 128);
+  x.fillStyle = 'rgba(0,0,0,.25)'; for (let r = 0; r < 128; r += 8) x.fillRect(0, r + 6, 512, 2);
+  for (let i = 0; i < 3200; i++) { x.fillStyle = cols[(Math.random() * cols.length) | 0]; x.globalAlpha = .4 + Math.random() * .5; x.fillRect(Math.random() * 512, Math.random() * 128, 4, 5); }
+  x.globalAlpha = 1;
+  const t = new THREE.CanvasTexture(g); t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
+}
+const stadBoardM = (() => {
+  const b = document.createElement('canvas'); b.width = 512; b.height = 32; const y = b.getContext('2d');
+  y.fillStyle = '#0d2a1a'; y.fillRect(0, 0, 512, 32); y.fillStyle = '#ffd23f'; y.font = '800 22px sans-serif';
+  for (let i = 0; i < 4; i++) y.fillText('PITCH IQ', 18 + i * 128, 24);
+  const t = new THREE.CanvasTexture(b); t.wrapS = THREE.RepeatWrapping; t.repeat.set(6, 1);
+  return new THREE.MeshBasicMaterial({map: t});
+})();
+function pitchBoards(grp) {
+  for (const [len, x, z, ry] of [[100, 52.5, 37.6, 0], [100, 52.5, -37.6, 0], [56, -4.2, 0, Math.PI / 2], [56, 109.2, 0, Math.PI / 2]]) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(len, .9, .15), stadBoardM); m.position.set(x, .45, z); m.rotation.y = ry; grp.add(m);
+  }
+}
+// Samples round a rounded rectangle centred on the pitch: corner centre c and outward normal n.
+// A point at depth d behind the inner edge is c + n * (r + d).
+function perim(hx, hz, r, k) {
+  const cx = hx - r, cz = hz - r, S = [], Q = [[1, 1], [-1, 1], [-1, -1], [1, -1]];
+  Q.forEach(([sx, sz], q) => { for (let i = 0; i <= k; i++) { const a = (q + i / k) * Math.PI / 2; S.push({c: [52.5 + sx * cx, sz * cz], n: [Math.cos(a), Math.sin(a)]}); } });
+  S.push(S[0]); return S;
+}
+// A band between two lines round the bowl. A(s) and B(s) return [depth, height].
+function band(S, r, A, B, mat, uS = 16, vS = 8) {
+  const pos = [], uv = [], idx = []; let u = 0, prev = null;
+  S.forEach((s, i) => {
+    const a = A(s), b = B(s);
+    const pa = [s.c[0] + s.n[0] * (r + a[0]), a[1], s.c[1] + s.n[1] * (r + a[0])];
+    const pb = [s.c[0] + s.n[0] * (r + b[0]), b[1], s.c[1] + s.n[1] * (r + b[0])];
+    if (prev) u += Math.hypot(pa[0] - prev[0], pa[2] - prev[2]);
+    prev = pa;
+    const len = Math.hypot(pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]);
+    pos.push(...pa, ...pb); uv.push(u / uS, 0, u / uS, len / vS);
+    if (i) { const k = i * 2; idx.push(k - 2, k - 1, k, k - 1, k + 1, k); }
+  });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx); g.computeVertexNormals();
+  return new THREE.Mesh(g, mat);
+}
+const lam = (color, o) => new THREE.MeshLambertMaterial(Object.assign({color, side: THREE.DoubleSide}, o));
+
+// Manchester: rounded bowl, three tiers all round, roof ring hung from exterior masts.
+// North end (x > 105) is the rebuilt stand: taller upper tier, higher flat roof, no masts.
+function buildEtihad(grp) {
+  const r = 18, S = perim(60.5, 40, r, 10), N = s => clamp((s.n[0] - .3) / .7, 0, 1);
+  const seat = lam(0xffffff, {map: crowdTex('#5aa8dc', ['#6cb4e4', '#9fd3f2', '#f4f6ef', '#36b1f0', '#1f2b3a', '#2d5f86'])});
+  const dark = lam(0x1d2733), roofM = lam(0xc9ced3), light = new THREE.MeshBasicMaterial({color: 0xfffbe6, side: THREE.DoubleSide});
+  [[0, 1, 22, 12], [18, 14, 34, 26], [30, 28, 48, 43]].forEach(([d0, y0, d1, y1], i) => {
+    const top = i === 2 ? s => [d1 + N(s) * 6, y1 + N(s) * 9] : () => [d1, y1];
+    grp.add(band(S, r, () => [d0, y0], top, seat));
+    grp.add(band(S, r, () => [d0, i ? y0 - 3 : 0], () => [d0, y0], dark));
+  });
+  const rin = s => [3, 46 + N(s) * 8], rout = s => [50 + N(s) * 6, 50 + N(s) * 8];
+  grp.add(band(S, r, rin, rout, roofM));
+  grp.add(band(S, r, s => [48 + N(s) * 6, 43 + N(s) * 9], s => [48 + N(s) * 6, 49.6 + N(s) * 8], dark));
+  grp.add(band(S, r, rin, s => [3, rin(s)[1] - 1.2], light));
+  const mastM = lam(0xe4e7ea), H = 72, pts = [];
+  const mast = (x, z, cables, stay) => {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(.8, 1.3, H, 8), mastM); m.position.set(x, H / 2, z); grp.add(m);
+    for (const c of cables) pts.push(x, H, z, ...c);
+    pts.push(x, H, z, ...stay);
+  };
+  for (const sz of [1, -1]) for (const x of [16, 40, 65, 89]) mast(x, sz * 92, [[x - 10, 48, sz * 64], [x + 10, 48, sz * 64]], [x, 0, sz * 116]);
+  for (const z of [-18, 18]) mast(-60, z, [[-34, 48, z - 10], [-34, 48, z + 10]], [-84, 0, z]);
+  const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  grp.add(new THREE.LineSegments(lg, new THREE.LineBasicMaterial({color: 0xdfe3e6})));
+  pitchBoards(grp);
+}
+
+// Madrid: steep, tight-cornered bowl, a fourth tier stacked on one long side (z < 0),
+// fixed roof ring, 360° screen, retractable roof (two panels on six cross trusses), steel louvre facade.
+function buildBernabeu(grp) {
+  const r = 8, S = perim(60, 40, r, 6), W = s => clamp((-s.n[1] - .3) / .7, 0, 1);
+  const seat = lam(0xffffff, {map: crowdTex('#b9c0c8', ['#f4f6ef', '#ffffff', '#dfe3e8', '#1f2b3a', '#7d8a99', '#d4af37'])});
+  const dark = lam(0x222a33), roofM = lam(0xd5d9dd), light = new THREE.MeshBasicMaterial({color: 0xfffbe6, side: THREE.DoubleSide});
+  [[0, 1, 20, 11], [17, 13, 32, 27], [29, 29, 44, 45]].forEach(([d0, y0, d1, y1], i) => {
+    grp.add(band(S, r, () => [d0, y0], () => [d1, y1], seat));
+    grp.add(band(S, r, () => [d0, i ? y0 - 3 : 0], () => [d0, y0], dark));
+  });
+  grp.add(band(S, r, () => [41, 47], s => [41 + 14 * W(s), 47 + 13 * W(s)], seat));
+  grp.add(band(S, r, s => [41, 47 - 3 * W(s)], () => [41, 47], dark));
+  const roofY = d => 66 + (d - 2) / 56 * 2;
+  grp.add(band(S, r, () => [2, roofY(2)], () => [58, roofY(58)], roofM));
+  grp.add(band(S, r, s => [44 + 11 * W(s), 45 + 15 * W(s)], s => [44 + 11 * W(s), roofY(44 + 11 * W(s))], dark));
+  grp.add(band(S, r, () => [2, roofY(2)], () => [2, roofY(2) - 1.2], light));
+  // louvred facade (seen from high cameras)
+  const lv = document.createElement('canvas'); lv.width = 16; lv.height = 256; const lx = lv.getContext('2d');
+  for (let i = 0; i < 32; i++) { lx.fillStyle = i % 2 ? '#8e979f' : '#dde2e6'; lx.fillRect(0, i * 8, 16, 8); }
+  const lt = new THREE.CanvasTexture(lv); lt.wrapS = lt.wrapT = THREE.RepeatWrapping;
+  grp.add(band(S, r, () => [61, 0], () => [61, 69], lam(0xffffff, {map: lt}), 8, 69));
+  // 360° screen under the roof edge
+  const sc2 = document.createElement('canvas'); sc2.width = 2048; sc2.height = 192;
+  const st = new THREE.CanvasTexture(sc2); st.wrapS = THREE.RepeatWrapping;
+  grp.add(band(S, r, () => [2.6, 58.6], () => [2.6, 64.2], new THREE.MeshBasicMaterial({map: st, side: THREE.DoubleSide}), 64, 5.6));
+  grp.userData.scoreboard = {ctx: sc2.getContext('2d'), tex: st};
+  // retractable roof: two panels that slide out over the fixed roof, on six cross trusses
+  const panelM = lam(0xe9eef2), trussM = lam(0xaab1b8), panels = [];
+  for (const sx of [-1, 1]) { const p = new THREE.Mesh(new THREE.BoxGeometry(62.5, .6, 86), panelM); p.position.set(52.5 + sx * 31.25, 69.2, 0); grp.add(p); panels.push(p); }
+  for (const dx of [-55, -33, -11, 11, 33, 55]) { const t = new THREE.Mesh(new THREE.BoxGeometry(2, 2.4, 92), trussM); t.position.set(52.5 + dx, 71, 0); grp.add(t); }
+  grp.userData.panels = panels;
+  pitchBoards(grp);
+}
+
+function setStadium(id) {
+  if (!STADIUMS[id]) id = 'generic';
+  stadium = id;
+  if (stadG) stadG.visible = false;
+  if (!builtStadiums[id]) { const g = new THREE.Group(); STADIUMS[id].build(g); scene.add(g); builtStadiums[id] = g; }
+  stadG = builtStadiums[id]; stadG.visible = true;
+  scoreboard = stadG.userData.scoreboard || null; scrTxt = '';
+  applyRoof();
+  try { localStorage.setItem('piq-stadium', id); } catch (e) {}
+}
+function applyRoof() {
+  const closed = stadium === 'bernabeu' && roofClosed;
+  (stadG && stadG.userData.panels || []).forEach((p, i) => { p.position.x = 52.5 + (i ? 1 : -1) * (closed ? 31.25 : 93.25); });
+  hemi.intensity = closed ? 1.05 : .8; sun.intensity = closed ? .35 : .75;
+  scene.fog.near = stadium === 'generic' ? 110 : 170; scene.fog.far = stadium === 'generic' ? 280 : 400;
+}
+function drawScreen(txt) {
+  if (!scoreboard || txt === scrTxt) return;
+  scrTxt = txt;
+  const x = scoreboard.ctx; x.fillStyle = '#05080d'; x.fillRect(0, 0, 2048, 192);
+  let fs = 120; x.font = `800 ${fs}px "Barlow Condensed", Barlow, sans-serif`;
+  const w = x.measureText(txt).width; if (w > 1960) { fs = Math.floor(fs * 1960 / w); x.font = `800 ${fs}px "Barlow Condensed", Barlow, sans-serif`; }
+  x.fillStyle = '#ffd23f'; x.textBaseline = 'middle'; x.fillText(txt, 44, 100);
+  x.fillStyle = '#36b1f0'; x.fillRect(0, 0, 2048, 8); x.fillRect(0, 184, 2048, 8);
+  scoreboard.tex.needsUpdate = true;
+}
+function screenText() {
+  if (!sc) return 'PITCH IQ';
+  if (phase === 'decide') return 'DECIDE  ' + Math.max(0, DIFF[diff].lim - (performance.now() - decT0) / 1000).toFixed(1) + ' S';
+  if (phase === 'outcome' && bannerAt && cur) return cur.res.toUpperCase();
+  return 'PITCH IQ  ·  ' + sc.name.toUpperCase() + '  ·  VERSION ' + 'ABC'[sc.vi];
+}
+function renderStad() {
+  $('#stad').innerHTML = Object.entries(STADIUMS).map(([k, s]) => `<button aria-pressed="${k === stadium}" data-s="${k}">${s.short}<small>${s.sub}</small></button>`).join('');
+  const rf = $('#roof'); rf.style.display = stadium === 'bernabeu' ? 'grid' : 'none';
+  rf.innerHTML = [['open', 'Roof open'], ['closed', 'Roof closed']].map(([k, l]) => `<button aria-pressed="${(k === 'closed') === roofClosed}" data-r="${k}">${l}</button>`).join('');
+}
+$('#stad').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { setStadium(b.dataset.s); renderStad(); } });
+$('#roof').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { roofClosed = b.dataset.r === 'closed'; try { localStorage.setItem('piq-roof', b.dataset.r); } catch (er) {} applyRoof(); renderStad(); } });
+setStadium(stadium);
+
 // players
 const G = {
   body: new THREE.CylinderGeometry(.24, .2, .62, 10), shorts: new THREE.CylinderGeometry(.21, .23, .24, 10),
@@ -623,7 +787,7 @@ function toMenu() { phase = 'menu'; load(si, true); setHud(); renderMenu(); show
 function openBrief(i) {
   load(i); phase = 'brief'; setHud();
   $('#bPos').textContent = sc.pos + ' · ' + DIFF[diff].label + ' · Version ' + 'ABC'[sc.vi]; $('#bName').textContent = sc.name; $('#bText').textContent = sc.text;
-  aimAtBall(true); show('brief');
+  renderStad(); aimAtBall(true); show('brief');
 }
 $('#back1').onclick = toMenu;
 const FINE = matchMedia('(pointer: fine)').matches;
@@ -850,6 +1014,7 @@ function step(now) {
       mk.style.left = clamp(x, 40, W - 40) + 'px'; mk.style.top = clamp(y, 110, H - 120) + 'px'; mk.classList.toggle('edge', edge);
     });
   }
+  if (scoreboard) drawScreen(screenText());
   R.render(scene, cam);
 }
 load(0); renderMenu(); show('menu'); setHud();
